@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120" width="520" height="120">
+  <defs>
+    <style>
+      .logo-text-my { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 58px; font-weight: 700; fill: #03225F; }
+      .logo-text-project { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 58px; font-weight: 700; fill: #0055D4; }
+      .logo-text-trace { font-family: 'Plus Jakarta Sans', sans-serif; font-size: 58px; font-weight: 700; fill: #03225F; }
+    </style>
+  </defs>
+
+  <!-- MARK CONTAINER -->
+  <g transform="translate(10, 10)">
+    <!-- Document Body Outline -->
+    <path d="M 32 94 C 26 94 22 90 22 84 L 22 22 C 22 16 26 12 32 12 L 72 12 L 94 34 L 94 84 C 94 90 90 94 84 94 Z" 
+          fill="#FFFFFF" 
+          stroke="#03225F" 
+          stroke-width="7" 
+          stroke-linejoin="round" />
+    
+    <!-- Folded Corner Triangle -->
+    <path d="M 72 12 L 94 34 L 72 34 Z" 
+          fill="#0055D4" />
+
+    <!-- Dotted Background Track -->
+    <path d="M 44 50 C 44 38 66 38 66 50 C 66 62 48 66 48 78" 
+          fill="none" 
+          stroke="#CBD5E1" 
+          stroke-width="3.5" 
+          stroke-linecap="round" 
+          stroke-dasharray="1 7" />
+
+    <!-- Rising Blue Trace Path with Nodes -->
+    <path d="M 17 84 C 26 82 36 72 42 62 C 48 52 56 46 64 46" 
+          fill="none" 
+          stroke="#0055D4" 
+          stroke-width="5.5" 
+          stroke-linecap="round" />
+
+    <!-- Start Node (Bottom Left outside/edge) -->
+    <circle cx="15" cy="84" r="7.5" fill="#FFFFFF" stroke="#0055D4" stroke-width="4.5" />
+
+    <!-- Middle Node -->
+    <circle cx="42" cy="62" r="5.5" fill="#0055D4" />
+
+    <!-- End Node (Top Right inside) -->
+    <circle cx="64" cy="46" r="6" fill="#FFFFFF" stroke="#0055D4" stroke-width="4" />
+
+    <!-- Verified Checkmark Badge at Bottom-Right -->
+    <circle cx="90" cy="82" r="16" fill="#0055D4" />
+    <path d="M 83 82 L 88 87 L 98 76" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" />
+  </g>
+
+  <!-- WORDMARK -->
+  <text x="135" y="78" xml:space="preserve">
+    <tspan class="logo-text-my">My</tspan><tspan class="logo-text-project">Project</tspan><tspan class="logo-text-trace">Trace</tspan>
+  </text>
+</svg>

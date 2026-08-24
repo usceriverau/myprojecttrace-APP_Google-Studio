@@ -1,0 +1,6 @@
+{
+  "name": "MyProjectTrace",
+  "description": "MyProjectTrace helps contractors capture project purchases, preserve receipt evidence, track progress photos, store paint & spec notes, manage customer payments, and export tax-ready PDF and Excel reports.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

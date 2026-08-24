@@ -1,0 +1,301 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Core authentication & helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isMemberOfCompany(companyId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid));
+    }
+
+    function getCompanyDoc(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)).data;
+    }
+
+    function getUserDoc(companyId) {
+      return get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data;
+    }
+
+    function isCompanyOwner(companyId) {
+      return isSignedIn() && (
+        getCompanyDoc(companyId).ownerUid == request.auth.uid
+      );
+    }
+
+    function isCompanyAdmin(companyId) {
+      return isMemberOfCompany(companyId) && (
+        isCompanyOwner(companyId) || 
+        getUserDoc(companyId).role == 'ADMIN'
+      );
+    }
+
+    // Validation helpers
+    function isValidCompany(data) {
+      return data.companyId is string && data.companyId.size() <= 128 &&
+             data.companyName is string && data.companyName.size() <= 200 &&
+             data.ownerUid is string && data.ownerUid.size() <= 128 &&
+             data.settings is map &&
+             data.createdAt is string;
+    }
+
+    function isValidUser(data, companyId) {
+      return data.userId is string && data.userId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.name is string && data.name.size() <= 150 &&
+             data.email is string && data.email.size() <= 200 &&
+             data.role in ['OWNER', 'ADMIN', 'FIELD_USER'] &&
+             data.createdAt is string;
+    }
+
+    function isValidUserDirectoryEntry(data, userId) {
+      return data.userId == userId &&
+             data.companyId is string && data.companyId.size() <= 128 &&
+             data.createdAt is string;
+    }
+
+    function isValidProject(data, companyId) {
+      return data.projectId is string && data.projectId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectName is string && data.projectName.size() <= 200 &&
+             data.contractValue is number && data.contractValue >= 0 &&
+             data.status in ['ACTIVE', 'COMPLETED', 'ON_HOLD'] &&
+             data.createdAt is string;
+    }
+
+    function isValidPurchase(data, companyId) {
+      return data.purchaseId is string && data.purchaseId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.totalAmount is number &&
+             data.captureStatus in ['DRAFT', 'UPLOADING', 'PROCESSING', 'NEEDS_REVIEW', 'CONFIRMED', 'REJECTED'] &&
+             data.createdBy is string &&
+             data.createdAt is string;
+    }
+
+    function isValidReceiptPage(data, companyId, purchaseId) {
+      return data.receiptPageId is string && data.receiptPageId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.purchaseId == purchaseId &&
+             data.pageNumber is number && data.pageNumber >= 1 &&
+             data.imageStoragePath is string && data.imageStoragePath.size() <= 500 &&
+             data.createdAt is string;
+    }
+
+    function isValidPurchaseItem(data, companyId, purchaseId) {
+      return data.itemId is string && data.itemId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.purchaseId == purchaseId &&
+             data.rawItemText is string && data.rawItemText.size() <= 1000 &&
+             data.createdAt is string;
+    }
+
+    function isValidPayment(data, companyId) {
+      return data.paymentId is string && data.paymentId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectId is string && data.projectId.size() <= 128 &&
+             data.paymentDate is string && data.paymentDate.size() <= 20 &&
+             data.amount is number && data.amount > 0 &&
+             data.paymentType in ['DEPOSIT', 'PROGRESS_PAYMENT', 'CHANGE_ORDER_PAYMENT', 'FINAL_PAYMENT', 'OTHER'] &&
+             data.status in ['PENDING', 'RECEIVED', 'CLEARED', 'CANCELLED'] &&
+             data.createdBy is string &&
+             data.createdAt is string;
+    }
+
+    function isValidFinancialAlert(data, companyId) {
+      return data.alertId is string && data.alertId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectId is string && data.projectId.size() <= 128 &&
+             data.alertType is string && data.alertType.size() <= 100 &&
+             data.severity in ['INFO', 'WARNING', 'CRITICAL'] &&
+             data.title is string && data.title.size() <= 200 &&
+             data.message is string && data.message.size() <= 1000 &&
+             data.status in ['OPEN', 'ACKNOWLEDGED', 'RESOLVED'] &&
+             data.createdAt is string;
+    }
+
+    // 1. User lookup directory: minimal lookup mapping authenticated userId to their company workspace
+    match /user_directory/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId);
+      allow list: if false; // Never list all users
+      
+      // Can only point to a company where the user has a real membership or is the owner creating it
+      allow create, update: if isSignedIn() && 
+                            request.auth.uid == userId && 
+                            incoming().userId == userId &&
+                            isValidUserDirectoryEntry(incoming(), userId) &&
+                            exists(/databases/$(database)/documents/companies/$(incoming().companyId)/users/$(request.auth.uid));
+
+      allow delete: if isSignedIn() && (request.auth.uid == userId);
+    }
+
+    // 2. Company workspace document
+    match /companies/{companyId} {
+      allow get: if isValidId(companyId) && (isMemberOfCompany(companyId) || (isSignedIn() && resource.data.ownerUid == request.auth.uid));
+      allow list: if false; // Tenant isolation: no client listing of all companies
+      
+      // Creation: must be signed in, ownerUid must match authenticated user
+      allow create: if isValidId(companyId) && isSignedIn() && 
+                    incoming().ownerUid == request.auth.uid && 
+                    incoming().companyId == companyId && 
+                    isValidCompany(incoming());
+                    
+      // Update: only OWNER or ADMIN can update company settings, but ownerUid and companyId are IMMUTABLE
+      allow update: if isValidId(companyId) && isCompanyAdmin(companyId) && 
+                    incoming().ownerUid == existing().ownerUid && 
+                    incoming().companyId == existing().companyId && 
+                    isValidCompany(incoming());
+                    
+      allow delete: if false;
+
+      // 3. Users subcollection with strict Owner Protection & Anti-Escalation
+      match /users/{userId} {
+        allow get: if isValidId(userId) && isMemberOfCompany(companyId);
+        allow list: if isMemberOfCompany(companyId);
+
+        // CREATE:
+        // - Initial Owner registration when creating company workspace (must match Company.ownerUid)
+        // - Real Owner creating an ADMIN or FIELD_USER (never another OWNER)
+        // - Admin creating a FIELD_USER only (never OWNER or ADMIN)
+        allow create: if isValidId(userId) && isValidUser(incoming(), companyId) && (
+          (request.auth.uid == userId && 
+           incoming().role == 'OWNER' && 
+           incoming().userId == userId && 
+           getCompanyDoc(companyId).ownerUid == request.auth.uid) ||
+          (isCompanyOwner(companyId) && 
+           incoming().role in ['ADMIN', 'FIELD_USER'] && 
+           incoming().role != 'OWNER') ||
+          (isCompanyAdmin(companyId) && 
+           !isCompanyOwner(companyId) && 
+           incoming().role == 'FIELD_USER')
+        );
+
+        // UPDATE:
+        // - Self-update (ANY user modifying own record): can update profile (e.g. name, phone),
+        //   but userId, companyId, role, and createdAt are STRICTLY IMMUTABLE.
+        //   Admin authorization CANNOT bypass self-update role immutability.
+        // - Owner updating OTHER member: can change role between ADMIN and FIELD_USER (never another OWNER).
+        //   Cannot change userId, companyId, or createdAt.
+        // - Admin updating OTHER member: can only update FIELD_USER. Cannot modify the real Owner's doc.
+        //   Cannot promote anyone to OWNER or ADMIN.
+        allow update: if isValidId(userId) && isValidUser(incoming(), companyId) && (
+          // Branch A: Self-update (Strict role and identity immutability)
+          (request.auth.uid == userId && 
+           incoming().role == existing().role && 
+           incoming().companyId == existing().companyId && 
+           incoming().userId == existing().userId && 
+           incoming().createdAt == existing().createdAt) ||
+          // Branch B: Real Owner updating another user (target is not self, cannot create another OWNER)
+          (isCompanyOwner(companyId) && 
+           request.auth.uid != userId && 
+           incoming().role in ['ADMIN', 'FIELD_USER'] && 
+           incoming().companyId == existing().companyId && 
+           incoming().userId == existing().userId && 
+           incoming().createdAt == existing().createdAt) ||
+          // Branch C: Admin updating another user (target is not self, not Owner, cannot assign OWNER or ADMIN)
+          (isCompanyAdmin(companyId) && 
+           !isCompanyOwner(companyId) && 
+           request.auth.uid != userId && 
+           existing().role == 'FIELD_USER' && 
+           existing().userId != getCompanyDoc(companyId).ownerUid && 
+           incoming().role == 'FIELD_USER' && 
+           incoming().companyId == existing().companyId && 
+           incoming().userId == existing().userId && 
+           incoming().createdAt == existing().createdAt)
+        );
+
+        // DELETE:
+        // - Real Owner can remove any member except themselves
+        // - Admin can remove FIELD_USER only (cannot remove Owner or Admins)
+        allow delete: if isValidId(userId) && (
+          (isCompanyOwner(companyId) && existing().role != 'OWNER' && userId != request.auth.uid) ||
+          (isCompanyAdmin(companyId) && !isCompanyOwner(companyId) && existing().role == 'FIELD_USER' && userId != request.auth.uid)
+        );
+      }
+
+      // 4. Projects subcollection (OWNER and ADMIN only for mutations; FIELD_USER is read-only)
+      match /projects/{projectId} {
+        allow get: if isValidId(projectId) && isMemberOfCompany(companyId);
+        allow list: if isMemberOfCompany(companyId);
+        allow create: if isValidId(projectId) && isCompanyAdmin(companyId) && isValidProject(incoming(), companyId);
+        allow update: if isValidId(projectId) && isCompanyAdmin(companyId) && 
+                      incoming().projectId == existing().projectId && 
+                      incoming().companyId == existing().companyId && 
+                      isValidProject(incoming(), companyId);
+        allow delete: if isValidId(projectId) && isCompanyAdmin(companyId);
+      }
+
+      // 5. Providers subcollection
+      match /providers/{providerId} {
+        allow get, list: if isMemberOfCompany(companyId);
+        allow create, update: if isMemberOfCompany(companyId);
+        allow delete: if isCompanyAdmin(companyId);
+      }
+
+      // 6. Purchases subcollection
+      match /purchases/{purchaseId} {
+        allow get: if isValidId(purchaseId) && isMemberOfCompany(companyId);
+        allow list: if isMemberOfCompany(companyId);
+        allow create: if isValidId(purchaseId) && isMemberOfCompany(companyId) && isValidPurchase(incoming(), companyId);
+        allow update: if isValidId(purchaseId) && isMemberOfCompany(companyId) && 
+                      incoming().purchaseId == existing().purchaseId && 
+                      incoming().companyId == existing().companyId && 
+                      isValidPurchase(incoming(), companyId);
+        allow delete: if isCompanyAdmin(companyId);
+
+        // ReceiptPages subcollection
+        match /receiptPages/{receiptPageId} {
+          allow get, list: if isMemberOfCompany(companyId);
+          allow create, update: if isMemberOfCompany(companyId) && isValidReceiptPage(incoming(), companyId, purchaseId);
+          allow delete: if isMemberOfCompany(companyId);
+        }
+
+        // Items subcollection
+        match /items/{itemId} {
+          allow get, list: if isMemberOfCompany(companyId);
+          allow create, update: if isMemberOfCompany(companyId) && isValidPurchaseItem(incoming(), companyId, purchaseId);
+          allow delete: if isMemberOfCompany(companyId);
+        }
+      }
+
+      // 7. Payments subcollection
+      match /payments/{paymentId} {
+        allow get: if isValidId(paymentId) && isMemberOfCompany(companyId);
+        allow list: if isMemberOfCompany(companyId);
+        allow create: if isValidId(paymentId) && isMemberOfCompany(companyId) && isValidPayment(incoming(), companyId);
+        allow update: if isValidId(paymentId) && isMemberOfCompany(companyId) && 
+                      incoming().paymentId == existing().paymentId && 
+                      incoming().companyId == existing().companyId && 
+                      isValidPayment(incoming(), companyId);
+        allow delete: if isCompanyAdmin(companyId);
+      }
+
+      // 8. Financial Alerts subcollection
+      match /alerts/{alertId} {
+        allow get: if isValidId(alertId) && isMemberOfCompany(companyId);
+        allow list: if isMemberOfCompany(companyId);
+        allow create: if isMemberOfCompany(companyId) && isValidFinancialAlert(incoming(), companyId);
+        allow update: if isMemberOfCompany(companyId) && isValidFinancialAlert(incoming(), companyId);
+        allow delete: if isCompanyAdmin(companyId);
+      }
+    }
+  }
+}

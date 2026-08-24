@@ -1,0 +1,246 @@
+{
+  "entities": {
+    "Company": {
+      "title": "Company",
+      "description": "Tenant company / contracting business workspace.",
+      "type": "object",
+      "properties": {
+        "companyId": { "type": "string", "maxLength": 128 },
+        "companyName": { "type": "string", "maxLength": 200 },
+        "ownerUid": { "type": "string", "maxLength": 128 },
+        "tradeType": { "type": "string", "maxLength": 50 },
+        "settings": { "type": "object" },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["companyId", "companyName", "ownerUid", "settings", "createdAt"]
+    },
+    "User": {
+      "title": "User",
+      "description": "User account belonging to a company.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 150 },
+        "email": { "type": "string", "format": "email", "maxLength": 200 },
+        "role": { "type": "string", "enum": ["OWNER", "ADMIN", "FIELD_USER"] },
+        "phone": { "type": "string", "maxLength": 30 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId", "companyId", "name", "email", "role", "createdAt"]
+    },
+    "Project": {
+      "title": "Project",
+      "description": "A contractor remodel or trade job with budget, contract value, and financial metrics.",
+      "type": "object",
+      "properties": {
+        "projectId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "projectName": { "type": "string", "maxLength": 200 },
+        "clientName": { "type": "string", "maxLength": 150 },
+        "projectAddress": { "type": "string", "maxLength": 300 },
+        "contractValue": { "type": "number" },
+        "approvedChangeOrders": { "type": "number" },
+        "startDate": { "type": "string", "maxLength": 20 },
+        "status": { "type": "string", "enum": ["ACTIVE", "COMPLETED", "ON_HOLD"] },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["projectId", "companyId", "projectName", "contractValue", "status", "createdAt"]
+    },
+    "Provider": {
+      "title": "Provider",
+      "description": "Supply merchant or vendor (Home Depot, Lowe's, Ferguson, etc.).",
+      "type": "object",
+      "properties": {
+        "providerId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "providerName": { "type": "string", "maxLength": 200 },
+        "normalizedName": { "type": "string", "maxLength": 200 },
+        "category": { "type": "string", "maxLength": 100 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["providerId", "companyId", "providerName", "normalizedName"]
+    },
+    "Purchase": {
+      "title": "Purchase",
+      "description": "Single financial expense transaction with receipt evidence and line items.",
+      "type": "object",
+      "properties": {
+        "purchaseId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "providerId": { "type": "string", "maxLength": 128 },
+        "providerName": { "type": "string", "maxLength": 200 },
+        "purchaseDate": { "type": "string", "maxLength": 20 },
+        "subtotal": { "type": "number" },
+        "tax": { "type": "number" },
+        "totalAmount": { "type": "number" },
+        "receiptNumber": { "type": "string", "maxLength": 100 },
+        "paymentMethod": { "type": "string", "maxLength": 100 },
+        "receiptPageCount": { "type": "number" },
+        "aiExtractedTextSummary": { "type": "string", "maxLength": 5000 },
+        "fullTextStoragePath": { "type": "string", "maxLength": 500 },
+        "aiConfidence": { "type": "number" },
+        "aiWarnings": { "type": "array" },
+        "analysisVersion": { "type": "string", "maxLength": 50 },
+        "aiModel": { "type": "string", "maxLength": 50 },
+        "analyzedAt": { "type": "string", "maxLength": 50 },
+        "captureStatus": { "type": "string", "enum": ["DRAFT", "UPLOADING", "PROCESSING", "NEEDS_REVIEW", "CONFIRMED", "REJECTED"] },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "confirmedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["purchaseId", "companyId", "totalAmount", "captureStatus", "createdBy", "createdAt"]
+    },
+    "ReceiptPage": {
+      "title": "ReceiptPage",
+      "description": "An individual photo / page in a multi-image receipt document for a purchase.",
+      "type": "object",
+      "properties": {
+        "receiptPageId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "purchaseId": { "type": "string", "maxLength": 128 },
+        "pageNumber": { "type": "number" },
+        "imageStoragePath": { "type": "string", "maxLength": 500 },
+        "imageUrl": { "type": "string", "maxLength": 1000 },
+        "extractedText": { "type": "string", "maxLength": 20000 },
+        "aiConfidence": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["receiptPageId", "companyId", "purchaseId", "pageNumber", "imageStoragePath", "createdAt"]
+    },
+    "PurchaseItem": {
+      "title": "PurchaseItem",
+      "description": "Extracted receipt product line item preserved for technical and audit reference.",
+      "type": "object",
+      "properties": {
+        "itemId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "purchaseId": { "type": "string", "maxLength": 128 },
+        "description": { "type": "string", "maxLength": 500 },
+        "sku": { "type": "string", "maxLength": 100 },
+        "productCode": { "type": "string", "maxLength": 100 },
+        "modelNumber": { "type": "string", "maxLength": 100 },
+        "brand": { "type": "string", "maxLength": 150 },
+        "manufacturer": { "type": "string", "maxLength": 150 },
+        "category": { "type": "string", "maxLength": 100 },
+        "colorName": { "type": "string", "maxLength": 100 },
+        "colorCode": { "type": "string", "maxLength": 100 },
+        "finish": { "type": "string", "maxLength": 100 },
+        "size": { "type": "string", "maxLength": 100 },
+        "dimensions": { "type": "string", "maxLength": 100 },
+        "quantity": { "type": "number" },
+        "unit": { "type": "string", "maxLength": 50 },
+        "unitPrice": { "type": "number" },
+        "lineTotal": { "type": "number" },
+        "rawItemText": { "type": "string", "maxLength": 1000 },
+        "additionalSpecifications": { "type": "array" },
+        "sourcePageNumbers": { "type": "array" },
+        "confidence": { "type": "number" },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["itemId", "companyId", "purchaseId", "rawItemText", "createdAt"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Recorded customer payment / collection for a project.",
+      "type": "object",
+      "properties": {
+        "paymentId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "paymentDate": { "type": "string", "maxLength": 20 },
+        "amount": { "type": "number" },
+        "paymentType": { "type": "string", "enum": ["DEPOSIT", "PROGRESS_PAYMENT", "CHANGE_ORDER_PAYMENT", "FINAL_PAYMENT", "OTHER"] },
+        "paymentMethod": { "type": "string", "maxLength": 100 },
+        "referenceNumber": { "type": "string", "maxLength": 100 },
+        "evidenceUrl": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["PENDING", "RECEIVED", "CLEARED", "CANCELLED"] },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["paymentId", "companyId", "projectId", "paymentDate", "amount", "paymentType", "status", "createdBy", "createdAt"]
+    },
+    "FinancialAlert": {
+      "title": "FinancialAlert",
+      "description": "Deterministic financial risk alert generated by the financial risk engine.",
+      "type": "object",
+      "properties": {
+        "alertId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "projectName": { "type": "string", "maxLength": 200 },
+        "alertType": { "type": "string", "maxLength": 100 },
+        "severity": { "type": "string", "enum": ["INFO", "WARNING", "CRITICAL"] },
+        "title": { "type": "string", "maxLength": 200 },
+        "message": { "type": "string", "maxLength": 1000 },
+        "whyItMatters": { "type": "string", "maxLength": 1000 },
+        "recommendedAction": { "type": "string", "maxLength": 1000 },
+        "detectedValue": { "type": "number" },
+        "threshold": { "type": "number" },
+        "status": { "type": "string", "enum": ["OPEN", "ACKNOWLEDGED", "RESOLVED"] },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "acknowledgedAt": { "type": "string", "maxLength": 50 },
+        "resolvedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["alertId", "companyId", "projectId", "alertType", "severity", "title", "message", "status", "createdAt"]
+    },
+    "UserDirectoryEntry": {
+      "title": "UserDirectoryEntry",
+      "description": "Direct membership pointer mapping authenticated userId to their company workspace",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["userId", "companyId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/user_directory/{userId}": {
+      "schema": { "$ref": "#/entities/UserDirectoryEntry" },
+      "description": "Direct membership pointer mapping authenticated userId to their company workspace"
+    },
+    "/companies/{companyId}": {
+      "schema": { "$ref": "#/entities/Company" },
+      "description": "Company workspaces"
+    },
+    "/companies/{companyId}/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Users associated with a specific company"
+    },
+    "/companies/{companyId}/projects/{projectId}": {
+      "schema": { "$ref": "#/entities/Project" },
+      "description": "Projects managed by the company"
+    },
+    "/companies/{companyId}/providers/{providerId}": {
+      "schema": { "$ref": "#/entities/Provider" },
+      "description": "Material and trade suppliers for the company"
+    },
+    "/companies/{companyId}/purchases/{purchaseId}": {
+      "schema": { "$ref": "#/entities/Purchase" },
+      "description": "Confirmed and draft purchases for the company"
+    },
+    "/companies/{companyId}/purchases/{purchaseId}/receiptPages/{receiptPageId}": {
+      "schema": { "$ref": "#/entities/ReceiptPage" },
+      "description": "Multi-page receipt image records supporting a purchase"
+    },
+    "/companies/{companyId}/purchases/{purchaseId}/items/{itemId}": {
+      "schema": { "$ref": "#/entities/PurchaseItem" },
+      "description": "Line items extracted from receipt for technical reference and auditability"
+    },
+    "/companies/{companyId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Project collection records and payment evidence"
+    },
+    "/companies/{companyId}/alerts/{alertId}": {
+      "schema": { "$ref": "#/entities/FinancialAlert" },
+      "description": "Financial risk alerts generated by the rule engine"
+    }
+  }
+}
