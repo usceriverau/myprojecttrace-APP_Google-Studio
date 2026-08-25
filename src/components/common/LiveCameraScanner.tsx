@@ -140,16 +140,26 @@ export const LiveCameraScanner: React.FC<LiveCameraScannerProps> = ({
     setShutterAnimation(true);
     setTimeout(() => setShutterAnimation(false), 200);
 
+    // Resize to maximum 1800px longest side if needed
+    const longestSide = Math.max(video.videoWidth, video.videoHeight);
+    let targetWidth = video.videoWidth;
+    let targetHeight = video.videoHeight;
+    if (longestSide > 1800) {
+      const scale = 1800 / longestSide;
+      targetWidth = Math.round(video.videoWidth * scale);
+      targetHeight = Math.round(video.videoHeight * scale);
+    }
+
     const canvas = canvasRef.current || document.createElement('canvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     // Draw video frame to canvas
-    ctx.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+    ctx.drawImage(video, 0, 0, targetWidth, targetHeight);
 
-    // Convert canvas to blob & File
+    // Convert canvas to blob & File with optimized 0.80 JPEG quality
     canvas.toBlob((blob) => {
       if (!blob) return;
 
@@ -166,7 +176,7 @@ export const LiveCameraScanner: React.FC<LiveCameraScannerProps> = ({
           file,
         },
       ]);
-    }, 'image/jpeg', 0.92);
+    }, 'image/jpeg', 0.80);
   };
 
   // Remove a snapped photo from the reel

@@ -35,6 +35,22 @@ export const paymentRepository = {
     });
     return payment;
   },
+
+  async updatePayment(companyId: string, paymentId: string, data: Partial<Payment>): Promise<void> {
+    if (!db) throw new Error('Firestore not initialized');
+    const docRef = doc(db, 'companies', companyId, 'payments', paymentId);
+    await updateDoc(docRef, {
+      ...data,
+      companyId,
+      paymentId,
+    });
+  },
+
+  async deletePayment(companyId: string, paymentId: string): Promise<void> {
+    if (!db) throw new Error('Firestore not initialized');
+    const docRef = doc(db, 'companies', companyId, 'payments', paymentId);
+    await deleteDoc(docRef);
+  },
 };
 
 export const purchaseRepository = {

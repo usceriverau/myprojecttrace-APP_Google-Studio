@@ -193,10 +193,27 @@ export interface Payment {
   paymentMethod: string;
   referenceNumber?: string | null;
   evidenceUrl?: string | null;
+  evidenceUrls?: string[];
+  payerName?: string | null; // Person or entity who made the payment
   status: PaymentStatus;
   notes?: string;
   createdBy: string;
   createdAt: string;
+  aiConfidence?: number;
+  aiExtractedSummary?: string;
+}
+
+export interface AIPaymentAnalysisResult {
+  payment_date: string | null; // YYYY-MM-DD
+  amount: number | null; // USD
+  payer_name: string | null; // Person or entity who made the payment
+  payment_method: string | null; // Check, Zelle, Wire Transfer, Credit Card, ACH, Cash, etc.
+  reference_number: string | null; // Check #, transaction confirmation code
+  payment_type_hint: PaymentType | null;
+  notes_summary: string | null;
+  full_extracted_text: string;
+  confidence: number; // 0.0 to 1.0
+  warnings: string[];
 }
 
 export interface FinancialAlert {

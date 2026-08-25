@@ -197,6 +197,27 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
     }
   };
 
+  // Allow manual entry fallback while preserving any attached receipt photos
+  const handleManualEntry = async () => {
+    setIsProcessing(true);
+    setErrorMessage(null);
+    try {
+      let purchase = currentPurchase;
+      if (!purchase) {
+        purchase = await createDraftPurchase(selectedProjectId);
+        setCurrentPurchase(purchase);
+      }
+      if (onOpenReview) {
+        onClose();
+        onOpenReview(purchase);
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to initialize manual purchase entry.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   if (!isOpen) return null;
 
   return (
@@ -215,11 +236,11 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
                   Capture Purchase & Receipt
                 </h2>
                 <span className="text-[10px] bg-[#054AC6] text-[#7FA0D4] font-bold px-2 py-0.5 rounded-full border border-[#7FA0D4]/30">
-                  Phase 2 AI OCR
+                  AI OCR
                 </span>
               </div>
               <p className="text-xs text-[#7FA0D4] font-medium">
-                Single or multi-image sequential receipt capture with Gemini 3.7 Flash line item extraction.
+                Optimized sequential receipt capture with fast line item and tax extraction.
               </p>
             </div>
           </div>
@@ -236,13 +257,43 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
         {/* MODAL BODY */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
           
-          {/* ERROR ALERT */}
+          {/* ERROR ALERT WITH IMMEDIATE RECOVERY ACTIONS */}
           {errorMessage && (
-            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start gap-3 text-rose-900 text-xs">
-              <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div>
-                <span className="font-bold block text-sm">Receipt Processing Notice</span>
-                <p className="mt-0.5">{errorMessage}</p>
+            <div className="bg-rose-50 border border-rose-200 rounded-xl p-4 space-y-3 text-rose-900 text-xs">
+              <div className="flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <span className="font-bold block text-sm">Receipt Processing Notice</span>
+                  <p className="mt-0.5">{errorMessage}</p>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-rose-200/80">
+                <button
+                  type="button"
+                  onClick={handleStartCaptureAndAnalysis}
+                  disabled={files.length === 0 || isProcessing}
+                  className="bg-rose-700 hover:bg-rose-800 text-white font-bold px-3 py-1.5 rounded-lg text-xs flex items-center gap-1.5 transition-colors cursor-pointer disabled:opacity-50"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Retry Analysis
+                </button>
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-white border border-rose-300 hover:bg-rose-100 text-rose-800 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
+                >
+                  Replace / Add Photos
+                </button>
+                {onOpenReview && (
+                  <button
+                    type="button"
+                    onClick={handleManualEntry}
+                    className="bg-white border border-rose-300 hover:bg-rose-100 text-rose-800 font-semibold px-3 py-1.5 rounded-lg text-xs transition-colors cursor-pointer"
+                  >
+                    Enter Manually →
+                  </button>
+                )}
               </div>
             </div>
           )}

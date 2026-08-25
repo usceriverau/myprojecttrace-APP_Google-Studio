@@ -34,6 +34,7 @@ import { progressPhotoRepository } from '../services/firebase/progressPhotoRepos
 import { projectNoteRepository } from '../services/firebase/projectNoteRepository';
 import { storageService } from '../services/firebase/storageService';
 import { receiptAnalysisService, PreparedReceiptPage } from '../services/receiptAnalysisService';
+import { optimizeReceiptImages } from '../lib/imageOptimization';
 import { createQuickProvider } from '../services/providerService';
 import { detectPurchaseDuplicates, DuplicateCheckInput } from '../services/duplicateDetectionService';
 import { 
@@ -72,6 +73,8 @@ interface ProjectContextType {
   updateProject: (projectId: string, data: Partial<Project>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
   addPayment: (data: Omit<Payment, 'paymentId' | 'companyId' | 'createdAt'>) => Promise<Payment>;
+  updatePayment: (paymentId: string, data: Partial<Payment>) => Promise<Payment>;
+  deletePayment: (paymentId: string) => Promise<void>;
   addPurchase: (purchase: Purchase, pages?: ReceiptPage[], items?: PurchaseItem[]) => Promise<void>;
   
   // Phase 2 Capture & Analysis Mutations
@@ -463,6 +466,47 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
+  const updatePayment = async (paymentId: string, data: Partial<Payment>): Promise<Payment> => {
+    if (isLiveFirestoreActive) {
+      try {
+        await paymentRepository.updatePayment(currentCompany.companyId, paymentId, data);
+      } catch (err) {
+        console.error('[MyProjectTrace] Firestore updatePayment error:', err);
+        throw new Error("We couldn't update this payment. Please check your connection and try again.");
+      }
+    }
+
+    let updatedPayment: Payment | null = null;
+    setPayments(prev =>
+      prev.map(p => {
+        if (p.paymentId === paymentId) {
+          updatedPayment = { ...p, ...data };
+          return updatedPayment;
+        }
+        return p;
+      })
+    );
+
+    if (!updatedPayment) {
+      throw new Error('Payment record not found.');
+    }
+
+    return updatedPayment;
+  };
+
+  const deletePayment = async (paymentId: string): Promise<void> => {
+    if (isLiveFirestoreActive) {
+      try {
+        await paymentRepository.deletePayment(currentCompany.companyId, paymentId);
+      } catch (err) {
+        console.error('[MyProjectTrace] Firestore deletePayment error:', err);
+        throw new Error("We couldn't delete this payment. Please check your connection and try again.");
+      }
+    }
+
+    setPayments(prev => prev.filter(p => p.paymentId !== paymentId));
+  };
+
   const addPurchase = async (purchase: Purchase, pages: ReceiptPage[] = [], items: PurchaseItem[] = []) => {
     if (isLiveFirestoreActive) {
       try {
@@ -540,49 +584,52 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     const companyId = currentCompany.companyId;
 
-    // STEP 1: Uploading Images to Firebase Storage
-    onProgress?.('UPLOADING', `Uploading ${files.length} receipt photo(s) to secure company storage...`);
+    // STEP 1: Client-Side Optimization & Storage Upload
+    onProgress?.('UPLOADING', 'Reading receipt...');
     
+    // Optimize images first to minimize network bandwidth and storage latency
+    const { files: optimizedFiles } = await optimizeReceiptImages(files);
+
     // Update local & firestore status to UPLOADING
     const uploadingUpdate: Partial<Purchase> = {
       captureStatus: 'UPLOADING',
-      receiptPageCount: files.length,
+      receiptPageCount: optimizedFiles.length,
     };
     if (isLiveFirestoreActive) {
       await purchaseRepository.updatePurchase(companyId, purchaseId, uploadingUpdate);
     }
     setPurchases(prev => prev.map(p => p.purchaseId === purchaseId ? { ...p, ...uploadingUpdate } : p));
 
-    // Upload each page
-    const uploadedPages: PreparedReceiptPage[] = [];
-    const createdReceiptPages: ReceiptPage[] = [];
-
-    for (let i = 0; i < files.length; i++) {
+    // Upload optimized pages in parallel
+    const uploadPromises = optimizedFiles.map(async (file, i) => {
       const pageNum = i + 1;
-      const file = files[i];
       const uploadRes = await storageService.uploadReceiptPageImage(companyId, purchaseId, pageNum, file);
-      
-      uploadedPages.push({
-        pageNumber: pageNum,
-        file,
-        previewUrl: uploadRes.imageUrl,
-        imageStoragePath: uploadRes.imageStoragePath,
-        imageUrl: uploadRes.imageUrl,
-      });
+      return {
+        uploadedPage: {
+          pageNumber: pageNum,
+          file,
+          previewUrl: uploadRes.imageUrl,
+          imageStoragePath: uploadRes.imageStoragePath,
+          imageUrl: uploadRes.imageUrl,
+        } as PreparedReceiptPage,
+        createdPage: {
+          receiptPageId: `page_${generateId()}`,
+          companyId,
+          purchaseId,
+          pageNumber: pageNum,
+          imageStoragePath: uploadRes.imageStoragePath,
+          imageUrl: uploadRes.imageUrl,
+          createdAt: new Date().toISOString(),
+        } as ReceiptPage,
+      };
+    });
 
-      createdReceiptPages.push({
-        receiptPageId: `page_${generateId()}`,
-        companyId,
-        purchaseId,
-        pageNumber: pageNum,
-        imageStoragePath: uploadRes.imageStoragePath,
-        imageUrl: uploadRes.imageUrl,
-        createdAt: new Date().toISOString(),
-      });
-    }
+    const uploadResults = await Promise.all(uploadPromises);
+    const uploadedPages: PreparedReceiptPage[] = uploadResults.map(r => r.uploadedPage);
+    const createdReceiptPages: ReceiptPage[] = uploadResults.map(r => r.createdPage);
 
-    // STEP 2: Server-Side Gemini OCR & Line Item Extraction
-    onProgress?.('PROCESSING', 'Analyzing receipt with Gemini AI (OCR, items, tax, and multi-photo overlap)...');
+    // STEP 2: Server-Side Gemini AI OCR & Line Item Extraction
+    onProgress?.('PROCESSING', 'Extracting purchase details...');
     
     const processingUpdate: Partial<Purchase> = {
       captureStatus: 'PROCESSING',
@@ -598,11 +645,12 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       uploadedPages
     );
 
-    const { analysis, purchaseItems: newItems, warnings } = analysisRes;
+    const { analysis, purchaseItems: newItems, warnings, modelUsed } = analysisRes;
 
     // STEP 3: Complete Analysis -> Transition to NEEDS_REVIEW
-    onProgress?.('NEEDS_REVIEW', 'Extraction complete. Ready for line item and total verification.');
+    onProgress?.('NEEDS_REVIEW', 'Extraction complete. Ready for verification.');
 
+    const activeModel = modelUsed || 'gemini-2.5-flash';
     const analyzedPurchaseUpdate: Partial<Purchase> = {
       providerName: analysis.merchant_name || 'Unidentified Merchant',
       purchaseDate: analysis.transaction_date || new Date().toISOString().split('T')[0],
@@ -614,8 +662,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       aiExtractedTextSummary: analysis.raw_text_summary,
       aiConfidence: analysis.confidence,
       aiWarnings: warnings,
-      analysisVersion: '2.0.0-gemini-3.7-flash',
-      aiModel: 'gemini-3.7-flash',
+      analysisVersion: `2.0.0-${activeModel}`,
+      aiModel: activeModel,
       analyzedAt: new Date().toISOString(),
       captureStatus: 'NEEDS_REVIEW',
     };
@@ -692,8 +740,9 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       preparedPages
     );
 
-    const { analysis, purchaseItems: newItems, warnings } = analysisRes;
+    const { analysis, purchaseItems: newItems, warnings, modelUsed } = analysisRes;
 
+    const activeModel = modelUsed || 'gemini-2.5-flash';
     const analyzedPurchaseUpdate: Partial<Purchase> = {
       providerName: analysis.merchant_name || 'Unidentified Merchant',
       purchaseDate: analysis.transaction_date || new Date().toISOString().split('T')[0],
@@ -705,8 +754,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       aiExtractedTextSummary: analysis.raw_text_summary,
       aiConfidence: analysis.confidence,
       aiWarnings: warnings,
-      analysisVersion: '2.0.0-gemini-3.7-flash',
-      aiModel: 'gemini-3.7-flash',
+      analysisVersion: `2.0.0-${activeModel}`,
+      aiModel: activeModel,
       analyzedAt: new Date().toISOString(),
       captureStatus: 'NEEDS_REVIEW',
     };
@@ -1129,6 +1178,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
         updateProject,
         deleteProject,
         addPayment,
+        updatePayment,
+        deletePayment,
         addPurchase,
         createDraftPurchase,
         processReceiptCapture,

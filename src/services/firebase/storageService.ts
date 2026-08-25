@@ -41,25 +41,35 @@ export const storageService = {
 
     try {
       const storageRef = ref(storage, storagePath);
-      const snapshot = await uploadBytes(storageRef, file, {
-        contentType: file.type || 'image/jpeg',
-        customMetadata: {
-          companyId,
-          purchaseId,
-          pageNumber: String(pageNumber),
-          uploadedAt: new Date().toISOString(),
-        },
-      });
 
-      const downloadUrl = await getDownloadURL(snapshot.ref);
+      // Perform upload with a 4-second timeout to prevent Firebase SDK hanging for 120s on unprovisioned buckets
+      const uploadPromise = (async () => {
+        const snapshot = await uploadBytes(storageRef, file, {
+          contentType: file.type || 'image/jpeg',
+          customMetadata: {
+            companyId,
+            purchaseId,
+            pageNumber: String(pageNumber),
+            uploadedAt: new Date().toISOString(),
+          },
+        });
+        return await getDownloadURL(snapshot.ref);
+      })();
+
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Storage upload timed out (using local preview fallback)')), 4000)
+      );
+
+      const downloadUrl = await Promise.race([uploadPromise, timeoutPromise]);
+
       return {
         imageStoragePath: storagePath,
         imageUrl: downloadUrl,
         pageNumber,
       };
-    } catch (error) {
-      console.error('[Storage Service] Failed to upload receipt image:', error);
-      // Graceful fallback for preview / offline environment
+    } catch (error: any) {
+      console.warn('[Storage Service] Upload notice (falling back to local preview URL):', error?.message || error);
+      // Graceful fallback for preview / unprovisioned storage environment
       const localUrl = URL.createObjectURL(file);
       return {
         imageStoragePath: storagePath,

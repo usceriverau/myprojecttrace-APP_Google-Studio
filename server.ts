@@ -14,7 +14,14 @@ function getGenAI(): GoogleGenAI {
     if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
       throw new Error('GEMINI_API_KEY environment variable is not configured.');
     }
-    aiClient = new GoogleGenAI({ apiKey });
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    });
   }
   return aiClient;
 }
@@ -68,15 +75,17 @@ const RECEIPT_ANALYSIS_SCHEMA: Schema = {
     },
     full_extracted_text: {
       type: Type.STRING,
-      description: 'Complete raw OCR text extracted across all receipt pages.',
+      description: 'Concise summary of OCR text extracted from the receipt.',
+      nullable: true,
     },
     raw_text_summary: {
       type: Type.STRING,
-      description: 'Brief 1-2 sentence human summary of the receipt contents.',
+      description: 'Brief 1-sentence summary of the receipt purchase.',
+      nullable: true,
     },
     items: {
       type: Type.ARRAY,
-      description: 'List of individual line items purchased. Overlapping items across consecutive photos must be merged/deduplicated.',
+      description: 'List of purchased line items. Deduplicate any overlapping items across consecutive photos.',
       items: {
         type: Type.OBJECT,
         properties: {
@@ -96,7 +105,7 @@ const RECEIPT_ANALYSIS_SCHEMA: Schema = {
           unit: { type: Type.STRING, description: 'Unit of measure (e.g. EA, FT, BOX, LF, SQ FT).', nullable: true },
           unit_price: { type: Type.NUMBER, description: 'Price per unit in USD.', nullable: true },
           line_total: { type: Type.NUMBER, description: 'Total line item cost in USD.', nullable: true },
-          raw_item_text: { type: Type.STRING, description: 'Exact raw OCR text for this line.' },
+          raw_item_text: { type: Type.STRING, description: 'Short raw OCR line text.' },
           additional_specifications: {
             type: Type.ARRAY,
             description: 'Any additional key-value specifications extracted.',
@@ -116,44 +125,104 @@ const RECEIPT_ANALYSIS_SCHEMA: Schema = {
           },
           confidence: { type: Type.NUMBER, description: 'Confidence score for this line item (0.0 to 1.0).' },
         },
-        required: ['raw_item_text', 'source_page_numbers', 'confidence'],
+        required: ['source_page_numbers', 'confidence'],
       },
     },
   },
   required: [
     'confidence',
     'warnings',
-    'full_extracted_text',
-    'raw_text_summary',
     'items',
   ],
 };
 
+const PAYMENT_ANALYSIS_SCHEMA: Schema = {
+  type: Type.OBJECT,
+  properties: {
+    payment_date: {
+      type: Type.STRING,
+      description: 'The date the payment was issued, written, or transferred formatted as YYYY-MM-DD. Return null if not readable.',
+      nullable: true,
+    },
+    amount: {
+      type: Type.NUMBER,
+      description: 'The numeric payment amount in USD (e.g. 5000.00). Return null if not readable.',
+      nullable: true,
+    },
+    payer_name: {
+      type: Type.STRING,
+      description: 'The person, client, or entity who made the payment (e.g. client name, account holder on check, Zelle/wire sender, payer signature). Return null if not readable.',
+      nullable: true,
+    },
+    payment_method: {
+      type: Type.STRING,
+      description: 'The payment method identified (e.g. Check, Zelle, Wire Transfer, Credit Card, ACH, Cash, Direct Deposit). Return null if unknown.',
+      nullable: true,
+    },
+    reference_number: {
+      type: Type.STRING,
+      description: 'Check number, wire reference ID, confirmation code, or transaction number. Return null if not readable.',
+      nullable: true,
+    },
+    payment_type_hint: {
+      type: Type.STRING,
+      description: 'Hint for payment type: DEPOSIT, PROGRESS_PAYMENT, CHANGE_ORDER_PAYMENT, FINAL_PAYMENT, or OTHER.',
+      nullable: true,
+    },
+    notes_summary: {
+      type: Type.STRING,
+      description: 'Brief 1-sentence note or memo describing the payment or check memo line.',
+      nullable: true,
+    },
+    confidence: {
+      type: Type.NUMBER,
+      description: 'Confidence score from 0.0 to 1.0 based on readability and completeness of the payment document.',
+    },
+    warnings: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Array of warnings if any values are ambiguous, blurry, or missing.',
+    },
+    full_extracted_text: {
+      type: Type.STRING,
+      description: 'Complete raw OCR text extracted from all payment images.',
+    },
+  },
+  required: [
+    'confidence',
+    'warnings',
+    'full_extracted_text',
+  ],
+};
+
 /**
- * Execute content generation with automated retry on 503 (high demand) and fallback cascade
+ * High-Performance Receipt Extraction Model Strategy:
+ * Primary Model: gemini-3.7-flash (fast, highly accurate multimodal OCR)
+ * Fallback Model: gemini-3.1-flash-lite (fast lightweight OCR)
+ * Fallback 2: gemini-flash-latest
  */
 async function generateReceiptContentWithFallback(
   ai: GoogleGenAI,
   promptParts: any[],
   schema: Schema
-): Promise<{ text: string; modelUsed: string }> {
-  // Model priority list: try flagship flash first, followed by fast fallbacks
+): Promise<{ text: string; modelUsed: string; aiProcessingMs: number }> {
+  const startTime = Date.now();
   const candidateModels = [
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
+    { name: 'gemini-3.7-flash', role: 'PRIMARY' },
+    { name: 'gemini-3.1-flash-lite', role: 'FALLBACK' },
+    { name: 'gemini-flash-latest', role: 'FALLBACK_2' },
   ];
 
   let lastError: any = null;
 
-  for (const modelName of candidateModels) {
-    // Try up to 2 attempts per model if transient 503 or 429 occurs
+  for (const candidate of candidateModels) {
+    // Try up to 2 attempts per candidate model to absorb momentary 503 demand spikes
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
-        console.log(`[Gemini Server] Executing receipt analysis with '${modelName}' (attempt ${attempt})...`);
+        console.log(`[Gemini Server] Executing analysis with '${candidate.name}' (${candidate.role}, attempt ${attempt})...`);
+        const modelStartTime = Date.now();
         const response = await ai.models.generateContent({
-          model: modelName,
+          model: candidate.name,
           contents: promptParts,
           config: {
             responseMimeType: 'application/json',
@@ -163,37 +232,34 @@ async function generateReceiptContentWithFallback(
         });
 
         const text = response.text?.trim();
+        const duration = Date.now() - modelStartTime;
         if (text) {
-          console.log(`[Gemini Server] Successfully extracted receipt with model '${modelName}'.`);
-          return { text, modelUsed: modelName };
+          console.log(`[Gemini Server] Successfully extracted data with '${candidate.name}' in ${duration}ms.`);
+          return { 
+            text, 
+            modelUsed: candidate.name,
+            aiProcessingMs: Date.now() - startTime,
+          };
         }
       } catch (err: any) {
         lastError = err;
         const errMessage = err?.message || String(err);
-        console.warn(`[Gemini Server] Model '${modelName}' attempt ${attempt} notice: ${errMessage}`);
-
-        const isTransient = 
-          errMessage.includes('503') || 
-          errMessage.includes('high demand') || 
-          errMessage.includes('UNAVAILABLE') || 
-          errMessage.includes('429') ||
-          err?.status === 503 ||
-          err?.status === 429;
-
-        if (isTransient && attempt < 2) {
-          // Wait briefly with jitter before retry
-          const delayMs = attempt * 1200 + Math.floor(Math.random() * 400);
-          console.log(`[Gemini Server] Transient spike detected; waiting ${delayMs}ms before retry...`);
-          await new Promise((resolve) => setTimeout(resolve, delayMs));
-        } else {
-          // Break to next candidate model in cascade
+        console.warn(`[Gemini Server] Model '${candidate.name}' (${candidate.role}, attempt ${attempt}) failed: ${errMessage}`);
+        
+        // If 404 (model deprecated/unavailable), don't retry same model
+        if (errMessage.includes('404') || errMessage.includes('NOT_FOUND')) {
           break;
+        }
+
+        // If 503 / high demand spike on attempt 1, wait 600ms before attempt 2
+        if (attempt === 1 && (errMessage.includes('503') || errMessage.includes('high demand') || errMessage.includes('UNAVAILABLE'))) {
+          await new Promise((resolve) => setTimeout(resolve, 600));
         }
       }
     }
   }
 
-  throw lastError || new Error('All candidate Gemini models were unavailable due to high demand. Please try again.');
+  throw lastError || new Error('Receipt analysis failed. We couldn\'t read this receipt. Please try again or enter the information manually.');
 }
 
 async function startServer() {
@@ -241,29 +307,15 @@ async function startServer() {
       // Each page can be passed as an image part (base64) or url
       const promptParts: any[] = [
         {
-          text: `You are an expert construction & trade financial receipt OCR and analysis engine for MyProjectTrace.
-Your task is to analyze the attached receipt image(s) for a single purchase transaction.
+          text: `You are a high-speed financial receipt OCR engine for MyProjectTrace.
+Analyze the attached receipt image(s) for a single purchase transaction.
 
-CRITICAL INSTRUCTIONS FOR MULTI-IMAGE & SINGLE-IMAGE RECEIPTS:
-1. One Transaction Authority: All images provided belong to ONE single purchase transaction (e.g. a long physical receipt captured in multiple overlapping sequential photos, or multiple invoice pages).
-2. Multi-Photo Overlap Detection & Deduplication:
-   - When a receipt is photographed in sequential slices (Page 1, Page 2, Page 3), the bottom of Page 1 may overlap with the top of Page 2.
-   - You MUST detect identical or overlapping line items across continuous pages and DEDUPLICATE them so each purchased item is listed ONLY ONCE.
-   - Record all pages where an item appears in 'source_page_numbers' (e.g. [1, 2] if it overlaps across the boundary).
-   - If overlap was detected and resolved, add an explanatory note in the 'warnings' array (e.g. "Overlapping items between Page 1 and Page 2 detected and deduplicated.").
-3. Financial Total Extraction:
-   - Extract the final grand total amount. This is the authoritative single amount counted in project expense totals.
-   - Extract subtotal and tax if clearly visible.
-   - If the total cannot be determined with certainty, set 'total' to null and add a warning.
-4. Line Item Extraction:
-   - Extract all purchased materials, tools, fasteners, plumbing/electrical fixtures, or supplies.
-   - Separate SKU, product code, model, brand, dimensions/size, color, finish, quantity, unit, unit price, and line total.
-   - NEVER invent or hallucinate data. If a specific attribute (e.g. color or SKU) is not present on the receipt, set it to null.
-5. Accuracy & Confidence:
-   - Set confidence (0.0 to 1.0) honestly based on image resolution, lighting, and legibility.
-   - If text is blurry or partially cut off, add specific notes in 'warnings'.
-
-Analyze all attached receipt pages sequentially and return the structured JSON output adhering strictly to the schema.`,
+CRITICAL INSTRUCTIONS:
+1. One Transaction: All attached images belong to ONE purchase transaction (e.g. continuous slices of a receipt).
+2. Deduplication: If photos overlap, deduplicate items so each item is listed only once.
+3. Financial Totals: Extract merchant_name, transaction_date (YYYY-MM-DD), receipt_number, subtotal, tax, and final grand total amount.
+4. Line Items: Extract each line item with description, SKU, quantity, unit, unit_price, line_total. Never invent data; use null if not visible.
+5. Accuracy: Output valid JSON adhering strictly to the schema quickly and accurately.`,
         },
       ];
 
@@ -302,19 +354,23 @@ Analyze all attached receipt pages sequentially and return the structured JSON o
 
       console.log(`[Gemini Server] Processing ${receiptPages.length} page(s) for purchase ${purchaseId || 'draft'}...`);
 
-      const { text: responseText, modelUsed } = await generateReceiptContentWithFallback(
+      const { text: responseText, modelUsed, aiProcessingMs } = await generateReceiptContentWithFallback(
         ai,
         promptParts,
         RECEIPT_ANALYSIS_SCHEMA
       );
 
+      const parseStart = Date.now();
       const parsedAnalysis = JSON.parse(responseText);
+      const parsingMs = Date.now() - parseStart;
 
       return res.json({
         success: true,
         purchaseId: purchaseId || null,
         analysis: parsedAnalysis,
         modelUsed,
+        aiProcessingMs,
+        parsingMs,
         extractedItemsCount: parsedAnalysis.items?.length || 0,
         warnings: parsedAnalysis.warnings || [],
       });
@@ -328,6 +384,111 @@ Analyze all attached receipt pages sequentially and return the structured JSON o
       const userMessage = isCapacityError
         ? 'The AI analysis service is experiencing temporary high demand. Please try again in a few moments.'
         : error.message || 'Failed to analyze receipt image.';
+
+      return res.status(isCapacityError ? 503 : 500).json({
+        error: userMessage,
+        details: process.env.NODE_ENV !== 'production' ? error.stack : undefined,
+      });
+    }
+  });
+
+  // API Route: Server-Side Gemini Multi-Photo Payment & Collection OCR Analysis
+  app.post('/api/analyze-payment', async (req, res) => {
+    try {
+      const { companyId, paymentPages } = req.body;
+
+      if (!paymentPages || !Array.isArray(paymentPages) || paymentPages.length === 0) {
+        return res.status(400).json({
+          error: 'Invalid request: At least one payment proof photo or document image is required.',
+        });
+      }
+
+      // Check if Gemini API key exists
+      let ai: GoogleGenAI;
+      try {
+        ai = getGenAI();
+      } catch (err: any) {
+        console.warn('[Gemini Server] API Key missing or unconfigured for payment analysis:', err.message);
+        return res.status(503).json({
+          error: 'GEMINI_API_KEY is not configured on the server. Please configure your API key in Settings.',
+          requiresApiKey: true,
+        });
+      }
+
+      const promptParts: any[] = [
+        {
+          text: `You are an expert construction & financial payment OCR engine for MyProjectTrace.
+Your task is to analyze the attached image(s) of payment proof (e.g., checks, bank wire transfers, Zelle/Venmo confirmations, customer deposit slips, or paid invoice receipts).
+
+CRITICAL EXTRACTION FOCUS:
+1. PAYMENT DATE: Extract the date the payment was written, processed, or transferred formatted strictly as YYYY-MM-DD.
+2. AMOUNT: Extract the exact numeric payment amount in USD.
+3. PAYER / PERSON WHO PAID: Extract the person, client, or company entity who made the payment (e.g. the name printed on the check header or signatory, the 'From' or 'Sender' name on a Zelle/bank transfer confirmation, client name).
+4. PAYMENT METHOD & REFERENCE: Extract payment method (Check, Zelle, Wire Transfer, Credit Card, ACH, Cash, Direct Deposit) and any reference or Check number.
+5. MEMO / NOTES: Extract any memo text or note describing what the payment was for (e.g., 'Initial Deposit', 'Progress Payment #2', 'Kitchen Cabinets').
+6. MULTI-PHOTO SYNTHESIS: If multiple photos are provided (such as front and back of a check, or multiple confirmation screenshots), synthesize all details into ONE cohesive payment record.
+
+Adhere strictly to the requested JSON schema and return only the structured JSON.`,
+        },
+      ];
+
+      for (let i = 0; i < paymentPages.length; i++) {
+        const page = paymentPages[i];
+        const pageNum = page.pageNumber || i + 1;
+
+        if (page.imageBase64) {
+          let rawBase64 = page.imageBase64;
+          let mimeType = page.mimeType || 'image/jpeg';
+          
+          if (rawBase64.includes(';base64,')) {
+            const parts = rawBase64.split(';base64,');
+            const match = parts[0].match(/data:(.*?)$/);
+            if (match) mimeType = match[1];
+            rawBase64 = parts[1];
+          }
+
+          promptParts.push({
+            text: `[Payment Photo ${pageNum} of ${paymentPages.length}]:`,
+          });
+          promptParts.push({
+            inlineData: {
+              data: rawBase64,
+              mimeType: mimeType,
+            },
+          });
+        } else if (page.imageUrl) {
+          promptParts.push({
+            text: `[Payment Photo ${pageNum} Image URL: ${page.imageUrl}]`,
+          });
+        }
+      }
+
+      console.log(`[Gemini Server] Processing ${paymentPages.length} payment image(s) for company ${companyId || 'current'}...`);
+
+      const { text: responseText, modelUsed } = await generateReceiptContentWithFallback(
+        ai,
+        promptParts,
+        PAYMENT_ANALYSIS_SCHEMA
+      );
+
+      const parsedAnalysis = JSON.parse(responseText);
+
+      return res.json({
+        success: true,
+        analysis: parsedAnalysis,
+        modelUsed,
+        warnings: parsedAnalysis.warnings || [],
+      });
+    } catch (error: any) {
+      console.error('[Gemini Server] Payment analysis error:', error);
+      const isCapacityError = 
+        error?.message?.includes('503') || 
+        error?.message?.includes('high demand') ||
+        error?.message?.includes('UNAVAILABLE');
+
+      const userMessage = isCapacityError
+        ? 'The AI analysis service is experiencing temporary high demand. Please try again in a few moments.'
+        : error.message || 'Failed to analyze payment image.';
 
       return res.status(isCapacityError ? 503 : 500).json({
         error: userMessage,
