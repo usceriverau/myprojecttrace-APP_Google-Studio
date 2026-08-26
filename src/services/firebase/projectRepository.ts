@@ -7,6 +7,7 @@
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Project } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const projectRepository = {
   async getProjects(companyId: string): Promise<Project[]> {
@@ -28,20 +29,22 @@ export const projectRepository = {
   async createProject(companyId: string, project: Project): Promise<Project> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'projects', project.projectId);
-    await setDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...project,
       companyId, // Ensure companyId matches path exactly
     });
+    await setDoc(docRef, sanitized);
     return project;
   },
 
   async updateProject(companyId: string, projectId: string, updates: Partial<Project>): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'projects', projectId);
-    await updateDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...updates,
       updatedAt: new Date().toISOString(),
     });
+    await setDoc(docRef, sanitized, { merge: true });
   },
 
   async deleteProject(companyId: string, projectId: string): Promise<void> {
@@ -50,3 +53,4 @@ export const projectRepository = {
     await deleteDoc(docRef);
   },
 };
+

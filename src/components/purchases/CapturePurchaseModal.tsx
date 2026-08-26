@@ -56,10 +56,25 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // Handle safe modal close with active request cancellation
+  const handleModalClose = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsProcessing(false);
+    onClose();
+  };
 
   // Initialize or load existing draft
   useEffect(() => {
     if (!isOpen) {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
       // Reset state on close
       setFiles([]);
       setFilePreviews([]);
@@ -135,6 +150,9 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
       return;
     }
 
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsProcessing(true);
     setErrorMessage(null);
 
@@ -146,14 +164,15 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
         setCurrentPurchase(purchase);
       }
 
-      // 2. Upload and analyze
+      // 2. Upload and analyze with active cancellation signal
       const result = await processReceiptCapture(
         purchase.purchaseId,
         files,
         (status, text) => {
           setCaptureStatus(status);
           setStatusMessage(text);
-        }
+        },
+        controller.signal
       );
 
       setCurrentPurchase(result.purchase);
@@ -161,10 +180,17 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
       setExtractedPages(result.pages);
       setCaptureStatus('NEEDS_REVIEW');
     } catch (err: any) {
-      console.error('[Capture Modal] Process error:', err);
-      setErrorMessage(err.message || 'Failed to process receipt. Please try again.');
-      setCaptureStatus('DRAFT');
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        console.log('[Capture Modal] Receipt analysis cancelled by user.');
+        setCaptureStatus('DRAFT');
+        setStatusMessage('');
+      } else {
+        console.error('[Capture Modal] Process error:', err);
+        setErrorMessage(err.message || 'Failed to process receipt. Please try again.');
+        setCaptureStatus('DRAFT');
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsProcessing(false);
     }
   };
@@ -172,6 +198,10 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
   // Retry Analysis (Idempotent)
   const handleRetryAnalysis = async () => {
     if (!currentPurchase) return;
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setIsProcessing(true);
     setErrorMessage(null);
 
@@ -182,7 +212,8 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
         (status, text) => {
           setCaptureStatus(status);
           setStatusMessage(text);
-        }
+        },
+        controller.signal
       );
 
       setCurrentPurchase(result.purchase);
@@ -190,9 +221,14 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
       setExtractedPages(result.pages);
       setCaptureStatus('NEEDS_REVIEW');
     } catch (err: any) {
-      console.error('[Capture Modal] Retry error:', err);
-      setErrorMessage(err.message || 'Failed to re-analyze receipt.');
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        console.log('[Capture Modal] Receipt re-analysis cancelled by user.');
+      } else {
+        console.error('[Capture Modal] Retry error:', err);
+        setErrorMessage(err.message || 'Failed to re-analyze receipt.');
+      }
     } finally {
+      abortControllerRef.current = null;
       setIsProcessing(false);
     }
   };
@@ -247,7 +283,7 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
 
           <button
             id="close-capture-modal-btn"
-            onClick={onClose}
+            onClick={handleModalClose}
             className="text-slate-300 hover:text-white p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -775,7 +811,7 @@ export const CapturePurchaseModal: React.FC<CapturePurchaseModalProps> = ({
             <button
               id="cancel-capture-btn"
               type="button"
-              onClick={onClose}
+              onClick={handleModalClose}
               className="text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white border border-slate-300 hover:bg-slate-100 px-4 py-2 rounded-xl transition-colors cursor-pointer"
             >
               {captureStatus === 'NEEDS_REVIEW' ? 'Close' : 'Cancel'}

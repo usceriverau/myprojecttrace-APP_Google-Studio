@@ -7,6 +7,7 @@
 import { collection, doc, getDocs, setDoc, deleteDoc, query, orderBy, collectionGroup, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ProjectPhoto } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const progressPhotoRepository = {
   async getProjectPhotos(companyId: string, projectId: string): Promise<ProjectPhoto[]> {
@@ -41,11 +42,12 @@ export const progressPhotoRepository = {
   async addProjectPhoto(companyId: string, projectId: string, photo: ProjectPhoto): Promise<ProjectPhoto> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'projects', projectId, 'progressPhotos', photo.photoId);
-    await setDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...photo,
       companyId,
       projectId,
     });
+    await setDoc(docRef, sanitized);
     return photo;
   },
 
@@ -55,3 +57,4 @@ export const progressPhotoRepository = {
     await deleteDoc(docRef);
   },
 };
+

@@ -1367,3 +1367,41 @@ export async function generateAnnualPdfReport({
   doc.save(`${cleanCompanyName}_Annual_Financial_Summary_${year}.pdf`);
 }
 
+/**
+ * Executes server-side PDF compilation endpoint with client-side fallback
+ */
+export async function exportProjectPdfWithServerFallback(
+  options: GenerateReportOptions & { userRole?: string }
+): Promise<void> {
+  try {
+    const response = await fetch('/api/reports/project-pdf', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(options),
+    });
+
+    if (response.ok) {
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const safeProjectName = (options.project.projectName || 'Project').replace(/[^a-zA-Z0-9_-]/g, '_');
+      a.download = `${safeProjectName}_Financial_Audit_Report.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      return;
+    }
+    console.warn('[Export Service] Server PDF endpoint returned status', response.status, '- executing client-side generation fallback.');
+  } catch (err) {
+    console.warn('[Export Service] Server PDF request failed, falling back to client-side jsPDF:', err);
+  }
+
+  // Graceful fallback to client-side jsPDF
+  await generateProjectPdfReport(options);
+}
+
+

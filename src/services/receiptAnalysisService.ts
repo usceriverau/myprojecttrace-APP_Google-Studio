@@ -37,11 +37,13 @@ export interface AnalysisResponse {
 export const receiptAnalysisService = {
   /**
    * Execute receipt analysis via the backend server route (/api/analyze-receipt).
+   * Supports AbortSignal for immediate non-blocking client-side cancellation.
    */
   async analyzeReceipt(
     companyId: string,
     purchaseId: string,
-    pages: PreparedReceiptPage[]
+    pages: PreparedReceiptPage[],
+    signal?: AbortSignal
   ): Promise<AnalysisResponse> {
     const overallStartTime = performance.now();
 
@@ -49,7 +51,11 @@ export const receiptAnalysisService = {
       throw new Error('At least one receipt image is required for analysis.');
     }
 
-    // 1. Client-side Image Optimization (Resize longest side <= 1600px, JPEG 0.78)
+    if (signal?.aborted) {
+      throw new DOMException('Analysis aborted by user', 'AbortError');
+    }
+
+    // 1. Client-side Image Optimization (Resize longest side <= 1500px, JPEG 0.78, <300KB)
     const optStart = performance.now();
     const payloadPages: Array<{
       pageNumber: number;
@@ -61,6 +67,18 @@ export const receiptAnalysisService = {
     let totalOptimizedBytes = 0;
 
     const optimizationPromises = pages.map(async (p) => {
+      // Check if file is already tagged with optimized base64
+      if ((p.file as any)._isOptimized && (p.file as any)._optimizedBase64) {
+        return {
+          pageNumber: p.pageNumber,
+          imageBase64: (p.file as any)._optimizedBase64,
+          mimeType: p.file.type || 'image/jpeg',
+          imageStoragePath: p.imageStoragePath,
+          imageUrl: p.imageUrl,
+          optimizedSizeBytes: p.file.size,
+        };
+      }
+
       const optResult = await optimizeReceiptImage(p.file);
       const base64 = optResult.base64 || await storageService.fileToBase64(optResult.file);
       return {
@@ -86,9 +104,13 @@ export const receiptAnalysisService = {
     }
 
     const imageOptimizationMs = Math.round(performance.now() - optStart);
-    const requestPreparationMs = 0; // Handled directly in optimization pipeline
+    const requestPreparationMs = 0;
 
-    // 2. Call backend server endpoint (Single Gemini call with primary + fallback)
+    if (signal?.aborted) {
+      throw new DOMException('Analysis aborted by user', 'AbortError');
+    }
+
+    // 2. Call backend server endpoint with AbortSignal
     let rawResult: any = null;
     let fallbackWarning: string | null = null;
 
@@ -103,6 +125,7 @@ export const receiptAnalysisService = {
           purchaseId,
           receiptPages: payloadPages,
         }),
+        signal,
       });
 
       if (!res.ok) {
@@ -112,6 +135,11 @@ export const receiptAnalysisService = {
 
       rawResult = await res.json();
     } catch (networkOrServerError: any) {
+      // If the user cancelled the request, rethrow immediately without triggering mock fallbacks
+      if (networkOrServerError.name === 'AbortError' || signal?.aborted) {
+        throw networkOrServerError;
+      }
+
       console.warn('[Receipt Analysis] Live server analysis notice:', networkOrServerError.message);
       fallbackWarning = networkOrServerError.message || 'Offline or server fallback mode';
       // Graceful fallback to guarantee the user's flow is never blocked

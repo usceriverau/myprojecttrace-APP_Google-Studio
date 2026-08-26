@@ -36,16 +36,38 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/companies/$(companyId)/users/$(request.auth.uid)).data;
     }
 
+    // 5-Role Hierarchy and Permission Helpers
     function isCompanyOwner(companyId) {
       return isSignedIn() && (
-        getCompanyDoc(companyId).ownerUid == request.auth.uid
+        getCompanyDoc(companyId).ownerUid == request.auth.uid ||
+        getUserDoc(companyId).role == 'OWNER'
       );
     }
 
     function isCompanyAdmin(companyId) {
       return isMemberOfCompany(companyId) && (
         isCompanyOwner(companyId) || 
-        getUserDoc(companyId).role == 'ADMIN'
+        getUserDoc(companyId).role in ['OWNER', 'ADMIN']
+      );
+    }
+
+    function isProjectManager(companyId) {
+      return isMemberOfCompany(companyId) && (
+        isCompanyAdmin(companyId) || 
+        getUserDoc(companyId).role in ['OWNER', 'ADMIN', 'PROJECT_MANAGER']
+      );
+    }
+
+    function isAccounting(companyId) {
+      return isMemberOfCompany(companyId) && (
+        isCompanyAdmin(companyId) || 
+        getUserDoc(companyId).role in ['OWNER', 'ADMIN', 'ACCOUNTING']
+      );
+    }
+
+    function isFieldUser(companyId) {
+      return isMemberOfCompany(companyId) && (
+        getUserDoc(companyId).role == 'FIELD_USER'
       );
     }
 
@@ -63,7 +85,7 @@ service cloud.firestore {
              data.companyId == companyId &&
              data.name is string && data.name.size() <= 150 &&
              data.email is string && data.email.size() <= 200 &&
-             data.role in ['OWNER', 'ADMIN', 'FIELD_USER'] &&
+             data.role in ['OWNER', 'ADMIN', 'PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] &&
              data.createdAt is string;
     }
 
@@ -73,12 +95,49 @@ service cloud.firestore {
              data.createdAt is string;
     }
 
+    function isValidClient(data, companyId) {
+      return data.clientId is string && data.clientId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.clientName is string && data.clientName.size() <= 200 &&
+             data.createdAt is string;
+    }
+
     function isValidProject(data, companyId) {
       return data.projectId is string && data.projectId.size() <= 128 &&
              data.companyId == companyId &&
              data.projectName is string && data.projectName.size() <= 200 &&
              data.contractValue is number && data.contractValue >= 0 &&
              data.status in ['ACTIVE', 'COMPLETED', 'ON_HOLD'] &&
+             data.createdAt is string;
+    }
+
+    function isValidProjectDocument(data, companyId, projectId) {
+      return data.documentId is string && data.documentId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectId == projectId &&
+             data.documentType in ['CONTRACT', 'CHANGE_ORDER', 'PERMIT', 'BLUEPRINT', 'INVOICE', 'OTHER'] &&
+             data.fileName is string && data.fileName.size() <= 300 &&
+             data.mimeType is string && data.mimeType.size() <= 100 &&
+             data.secureStorageReference is string && data.secureStorageReference.size() <= 500 &&
+             data.fileUrl is string && data.fileUrl.size() <= 1000 &&
+             data.uploadedBy is string && data.uploadedBy.size() <= 150 &&
+             data.createdAt is string;
+    }
+
+    function isValidProjectPhoto(data, companyId, projectId) {
+      return data.photoId is string && data.photoId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectId == projectId &&
+             data.imageUrl is string && data.imageUrl.size() <= 1000 &&
+             data.createdAt is string;
+    }
+
+    function isValidProjectNote(data, companyId, projectId) {
+      return data.noteId is string && data.noteId.size() <= 128 &&
+             data.companyId == companyId &&
+             data.projectId == projectId &&
+             data.title is string && data.title.size() <= 200 &&
+             data.content is string && data.content.size() <= 4000 &&
              data.createdAt is string;
     }
 
@@ -132,12 +191,11 @@ service cloud.firestore {
              data.createdAt is string;
     }
 
-    // 1. User lookup directory: minimal lookup mapping authenticated userId to their company workspace
+    // 1. User lookup directory: maps authenticated userId to company workspace
     match /user_directory/{userId} {
       allow get: if isSignedIn() && (request.auth.uid == userId);
-      allow list: if false; // Never list all users
+      allow list: if false; // Tenant isolation
       
-      // Can only point to a company where the user has a real membership or is the owner creating it
       allow create, update: if isSignedIn() && 
                             request.auth.uid == userId && 
                             incoming().userId == userId &&
@@ -150,7 +208,7 @@ service cloud.firestore {
     // 2. Company workspace document
     match /companies/{companyId} {
       allow get: if isValidId(companyId) && (isMemberOfCompany(companyId) || (isSignedIn() && resource.data.ownerUid == request.auth.uid));
-      allow list: if false; // Tenant isolation: no client listing of all companies
+      allow list: if false; // Tenant isolation
       
       // Creation: must be signed in, ownerUid must match authenticated user
       allow create: if isValidId(companyId) && isSignedIn() && 
@@ -158,7 +216,7 @@ service cloud.firestore {
                     incoming().companyId == companyId && 
                     isValidCompany(incoming());
                     
-      // Update: only OWNER or ADMIN can update company settings, but ownerUid and companyId are IMMUTABLE
+      // Update: only OWNER or ADMIN can update company settings; ownerUid & companyId are IMMUTABLE
       allow update: if isValidId(companyId) && isCompanyAdmin(companyId) && 
                     incoming().ownerUid == existing().ownerUid && 
                     incoming().companyId == existing().companyId && 
@@ -166,36 +224,33 @@ service cloud.firestore {
                     
       allow delete: if false;
 
-      // 3. Users subcollection with strict Owner Protection & Anti-Escalation
+      // 3. Users subcollection with strict Anti-Escalation & Role Protection
       match /users/{userId} {
         allow get: if isValidId(userId) && isMemberOfCompany(companyId);
         allow list: if isMemberOfCompany(companyId);
 
         // CREATE:
-        // - Initial Owner registration when creating company workspace (must match Company.ownerUid)
-        // - Real Owner creating an ADMIN or FIELD_USER (never another OWNER)
-        // - Admin creating a FIELD_USER only (never OWNER or ADMIN)
+        // - Initial Owner registration when creating company workspace
+        // - Real Owner creating an ADMIN, PROJECT_MANAGER, FIELD_USER, or ACCOUNTING (never another OWNER)
+        // - Admin creating PROJECT_MANAGER, FIELD_USER, or ACCOUNTING (never OWNER or ADMIN)
         allow create: if isValidId(userId) && isValidUser(incoming(), companyId) && (
           (request.auth.uid == userId && 
            incoming().role == 'OWNER' && 
            incoming().userId == userId && 
            getCompanyDoc(companyId).ownerUid == request.auth.uid) ||
           (isCompanyOwner(companyId) && 
-           incoming().role in ['ADMIN', 'FIELD_USER'] && 
+           incoming().role in ['ADMIN', 'PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] && 
            incoming().role != 'OWNER') ||
           (isCompanyAdmin(companyId) && 
            !isCompanyOwner(companyId) && 
-           incoming().role == 'FIELD_USER')
+           incoming().role in ['PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'])
         );
 
         // UPDATE:
-        // - Self-update (ANY user modifying own record): can update profile (e.g. name, phone),
+        // - Self-update (ANY member modifying own record): can update profile (e.g. name, phone),
         //   but userId, companyId, role, and createdAt are STRICTLY IMMUTABLE.
-        //   Admin authorization CANNOT bypass self-update role immutability.
-        // - Owner updating OTHER member: can change role between ADMIN and FIELD_USER (never another OWNER).
-        //   Cannot change userId, companyId, or createdAt.
-        // - Admin updating OTHER member: can only update FIELD_USER. Cannot modify the real Owner's doc.
-        //   Cannot promote anyone to OWNER or ADMIN.
+        // - Owner updating OTHER member: can change role between non-OWNER roles (never another OWNER).
+        // - Admin updating OTHER member: can modify PROJECT_MANAGER, FIELD_USER, ACCOUNTING. Cannot touch Owner.
         allow update: if isValidId(userId) && isValidUser(incoming(), companyId) && (
           // Branch A: Self-update (Strict role and identity immutability)
           (request.auth.uid == userId && 
@@ -203,20 +258,20 @@ service cloud.firestore {
            incoming().companyId == existing().companyId && 
            incoming().userId == existing().userId && 
            incoming().createdAt == existing().createdAt) ||
-          // Branch B: Real Owner updating another user (target is not self, cannot create another OWNER)
+          // Branch B: Real Owner updating another user
           (isCompanyOwner(companyId) && 
            request.auth.uid != userId && 
-           incoming().role in ['ADMIN', 'FIELD_USER'] && 
+           incoming().role in ['ADMIN', 'PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] && 
            incoming().companyId == existing().companyId && 
            incoming().userId == existing().userId && 
            incoming().createdAt == existing().createdAt) ||
-          // Branch C: Admin updating another user (target is not self, not Owner, cannot assign OWNER or ADMIN)
+          // Branch C: Admin updating another non-owner user
           (isCompanyAdmin(companyId) && 
            !isCompanyOwner(companyId) && 
            request.auth.uid != userId && 
-           existing().role == 'FIELD_USER' && 
+           existing().role in ['PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] && 
            existing().userId != getCompanyDoc(companyId).ownerUid && 
-           incoming().role == 'FIELD_USER' && 
+           incoming().role in ['PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] && 
            incoming().companyId == existing().companyId && 
            incoming().userId == existing().userId && 
            incoming().createdAt == existing().createdAt)
@@ -224,42 +279,83 @@ service cloud.firestore {
 
         // DELETE:
         // - Real Owner can remove any member except themselves
-        // - Admin can remove FIELD_USER only (cannot remove Owner or Admins)
+        // - Admin can remove non-admin/non-owner members only
         allow delete: if isValidId(userId) && (
           (isCompanyOwner(companyId) && existing().role != 'OWNER' && userId != request.auth.uid) ||
-          (isCompanyAdmin(companyId) && !isCompanyOwner(companyId) && existing().role == 'FIELD_USER' && userId != request.auth.uid)
+          (isCompanyAdmin(companyId) && !isCompanyOwner(companyId) && existing().role in ['PROJECT_MANAGER', 'FIELD_USER', 'ACCOUNTING'] && userId != request.auth.uid)
         );
       }
 
-      // 4. Projects subcollection (OWNER and ADMIN only for mutations; FIELD_USER is read-only)
+      // 4. Clients subcollection
+      match /clients/{clientId} {
+        allow get, list: if isMemberOfCompany(companyId);
+        allow create: if isValidId(clientId) && isProjectManager(companyId) && isValidClient(incoming(), companyId);
+        allow update: if isValidId(clientId) && isProjectManager(companyId) && 
+                      incoming().clientId == existing().clientId && 
+                      incoming().companyId == existing().companyId && 
+                      isValidClient(incoming(), companyId);
+        allow delete: if isValidId(clientId) && isCompanyAdmin(companyId);
+      }
+
+      // 5. Projects subcollection (OWNER, ADMIN, PROJECT_MANAGER can mutate)
       match /projects/{projectId} {
-        allow get: if isValidId(projectId) && isMemberOfCompany(companyId);
-        allow list: if isMemberOfCompany(companyId);
-        allow create: if isValidId(projectId) && isCompanyAdmin(companyId) && isValidProject(incoming(), companyId);
-        allow update: if isValidId(projectId) && isCompanyAdmin(companyId) && 
+        allow get, list: if isValidId(projectId) && isMemberOfCompany(companyId);
+        allow create: if isValidId(projectId) && isProjectManager(companyId) && isValidProject(incoming(), companyId);
+        allow update: if isValidId(projectId) && isProjectManager(companyId) && 
                       incoming().projectId == existing().projectId && 
                       incoming().companyId == existing().companyId && 
                       isValidProject(incoming(), companyId);
         allow delete: if isValidId(projectId) && isCompanyAdmin(companyId);
+
+        // Project Documents subcollection
+        match /documents/{documentId} {
+          allow get, list: if isMemberOfCompany(companyId);
+          allow create: if isValidId(documentId) && (isProjectManager(companyId) || isAccounting(companyId)) && isValidProjectDocument(incoming(), companyId, projectId);
+          allow update: if isValidId(documentId) && (isProjectManager(companyId) || isAccounting(companyId)) && 
+                        incoming().documentId == existing().documentId && 
+                        incoming().companyId == existing().companyId && 
+                        incoming().projectId == existing().projectId && 
+                        isValidProjectDocument(incoming(), companyId, projectId);
+          allow delete: if isValidId(documentId) && isProjectManager(companyId);
+        }
+
+        // Project Photos subcollection
+        match /photos/{photoId} {
+          allow get, list: if isMemberOfCompany(companyId);
+          allow create: if isValidId(photoId) && isMemberOfCompany(companyId) && isValidProjectPhoto(incoming(), companyId, projectId);
+          allow update: if isValidId(photoId) && (isProjectManager(companyId) || request.auth.uid == existing().uploadedBy) && isValidProjectPhoto(incoming(), companyId, projectId);
+          allow delete: if isValidId(photoId) && (isProjectManager(companyId) || request.auth.uid == existing().uploadedBy);
+        }
+
+        // Project Notes subcollection
+        match /notes/{noteId} {
+          allow get, list: if isMemberOfCompany(companyId);
+          allow create: if isValidId(noteId) && isMemberOfCompany(companyId) && isValidProjectNote(incoming(), companyId, projectId);
+          allow update: if isValidId(noteId) && (isProjectManager(companyId) || request.auth.uid == existing().authorId) && isValidProjectNote(incoming(), companyId, projectId);
+          allow delete: if isValidId(noteId) && (isProjectManager(companyId) || request.auth.uid == existing().authorId);
+        }
       }
 
-      // 5. Providers subcollection
+      // 6. Providers subcollection
       match /providers/{providerId} {
         allow get, list: if isMemberOfCompany(companyId);
         allow create, update: if isMemberOfCompany(companyId);
         allow delete: if isCompanyAdmin(companyId);
       }
 
-      // 6. Purchases subcollection
+      // 7. Purchases subcollection (Receipt tracking)
       match /purchases/{purchaseId} {
-        allow get: if isValidId(purchaseId) && isMemberOfCompany(companyId);
-        allow list: if isMemberOfCompany(companyId);
+        allow get, list: if isValidId(purchaseId) && isMemberOfCompany(companyId);
         allow create: if isValidId(purchaseId) && isMemberOfCompany(companyId) && isValidPurchase(incoming(), companyId);
-        allow update: if isValidId(purchaseId) && isMemberOfCompany(companyId) && 
-                      incoming().purchaseId == existing().purchaseId && 
-                      incoming().companyId == existing().companyId && 
-                      isValidPurchase(incoming(), companyId);
-        allow delete: if isCompanyAdmin(companyId);
+        allow update: if isValidId(purchaseId) && (
+          isProjectManager(companyId) || 
+          isAccounting(companyId) || 
+          (request.auth.uid == existing().createdBy && existing().captureStatus in ['DRAFT', 'UPLOADING', 'PROCESSING', 'NEEDS_REVIEW'])
+        ) && 
+        incoming().purchaseId == existing().purchaseId && 
+        incoming().companyId == existing().companyId && 
+        isValidPurchase(incoming(), companyId);
+        allow delete: if isValidId(purchaseId) && (isCompanyAdmin(companyId) || (request.auth.uid == existing().createdBy && existing().captureStatus in ['DRAFT', 'NEEDS_REVIEW']));
 
         // ReceiptPages subcollection
         match /receiptPages/{receiptPageId} {
@@ -276,24 +372,21 @@ service cloud.firestore {
         }
       }
 
-      // 7. Payments subcollection
+      // 8. Payments subcollection
       match /payments/{paymentId} {
-        allow get: if isValidId(paymentId) && isMemberOfCompany(companyId);
-        allow list: if isMemberOfCompany(companyId);
-        allow create: if isValidId(paymentId) && isMemberOfCompany(companyId) && isValidPayment(incoming(), companyId);
-        allow update: if isValidId(paymentId) && isMemberOfCompany(companyId) && 
+        allow get, list: if isValidId(paymentId) && (isProjectManager(companyId) || isAccounting(companyId));
+        allow create: if isValidId(paymentId) && (isProjectManager(companyId) || isAccounting(companyId)) && isValidPayment(incoming(), companyId);
+        allow update: if isValidId(paymentId) && (isProjectManager(companyId) || isAccounting(companyId)) && 
                       incoming().paymentId == existing().paymentId && 
                       incoming().companyId == existing().companyId && 
                       isValidPayment(incoming(), companyId);
-        allow delete: if isCompanyAdmin(companyId);
+        allow delete: if isValidId(paymentId) && (isCompanyAdmin(companyId) || isAccounting(companyId));
       }
 
-      // 8. Financial Alerts subcollection
+      // 9. Financial Alerts subcollection
       match /alerts/{alertId} {
-        allow get: if isValidId(alertId) && isMemberOfCompany(companyId);
-        allow list: if isMemberOfCompany(companyId);
-        allow create: if isMemberOfCompany(companyId) && isValidFinancialAlert(incoming(), companyId);
-        allow update: if isMemberOfCompany(companyId) && isValidFinancialAlert(incoming(), companyId);
+        allow get, list: if isValidId(alertId) && isMemberOfCompany(companyId);
+        allow create, update: if isMemberOfCompany(companyId) && isValidFinancialAlert(incoming(), companyId);
         allow delete: if isCompanyAdmin(companyId);
       }
     }

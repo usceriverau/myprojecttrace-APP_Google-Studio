@@ -9,7 +9,7 @@
  * 5. Sunset Specialty Painting (Active, low margin alert demo)
  */
 
-import { Company, User, Project, Provider, Purchase, ReceiptPage, PurchaseItem, Payment, FinancialAlert, ProjectPhoto, ProjectNote } from '../types';
+import { Company, User, Project, Provider, Purchase, ReceiptPage, PurchaseItem, Payment, FinancialAlert, ProjectPhoto, ProjectNote, Client, ProjectDocument } from '../types';
 
 export const DEMO_COMPANY: Company = {
   companyId: 'company_apex_builders',
@@ -45,6 +45,15 @@ export const DEMO_USERS: User[] = [
     createdAt: '2026-01-16T09:00:00.000Z',
   },
   {
+    userId: 'usr_alex_pm',
+    companyId: 'company_apex_builders',
+    name: 'Alex Rivera',
+    email: 'alex@apexremodel.com',
+    role: 'PROJECT_MANAGER',
+    phone: '(555) 345-8901',
+    createdAt: '2026-01-20T08:30:00.000Z',
+  },
+  {
     userId: 'usr_dave_field',
     companyId: 'company_apex_builders',
     name: 'Dave Miller',
@@ -52,6 +61,97 @@ export const DEMO_USERS: User[] = [
     role: 'FIELD_USER',
     phone: '(555) 456-7890',
     createdAt: '2026-02-01T07:30:00.000Z',
+  },
+  {
+    userId: 'usr_emma_acct',
+    companyId: 'company_apex_builders',
+    name: 'Emma Watson',
+    email: 'emma@apexremodel.com',
+    role: 'ACCOUNTING',
+    phone: '(555) 567-8901',
+    createdAt: '2026-02-10T09:00:00.000Z',
+  },
+];
+
+export const DEMO_CLIENTS: Client[] = [
+  {
+    clientId: 'client_smith',
+    companyId: 'company_apex_builders',
+    clientName: 'Robert & Emily Smith',
+    address: '742 Evergreen Terrace, Springfield, OR',
+    phone: '(555) 123-4567',
+    email: 'robert.smith@example.com',
+    notes: 'Homeowner, primary residence renovation.',
+    createdAt: '2026-05-15T09:00:00.000Z',
+  },
+  {
+    clientId: 'client_highland',
+    companyId: 'company_apex_builders',
+    clientName: 'David Highland',
+    address: '1420 Highland Ave, Lakeview, OR',
+    phone: '(555) 234-8901',
+    email: 'd.highland@example.com',
+    notes: 'Repeat client, requested high-end finishes.',
+    createdAt: '2026-05-25T10:00:00.000Z',
+  },
+  {
+    clientId: 'client_oakridge',
+    companyId: 'company_apex_builders',
+    clientName: 'Karen Vance',
+    address: '88 Oakridge Ridge Rd, Pine Valley, OR',
+    phone: '(555) 345-9012',
+    email: 'kvance@example.com',
+    notes: 'Custom outdoor living build.',
+    createdAt: '2026-06-20T11:00:00.000Z',
+  },
+  {
+    clientId: 'client_metro',
+    companyId: 'company_apex_builders',
+    clientName: 'Metro Properties Inc.',
+    address: '400 Industrial Parkway, Suite 200, Eugene, OR',
+    phone: '(555) 456-0123',
+    email: 'accounts@metroprop.com',
+    notes: 'Commercial property management group.',
+    createdAt: '2026-04-28T08:00:00.000Z',
+  },
+  {
+    clientId: 'client_sunset',
+    companyId: 'company_apex_builders',
+    clientName: 'Marcus Wright',
+    address: '310 Sunset Hills Court, Oak Hills, OR',
+    phone: '(555) 567-1234',
+    email: 'mwright@example.com',
+    notes: 'Exterior refresh client.',
+    createdAt: '2026-07-01T10:00:00.000Z',
+  },
+];
+
+export const DEMO_PROJECT_DOCUMENTS: ProjectDocument[] = [
+  {
+    documentId: 'doc_smith_contract',
+    companyId: 'company_apex_builders',
+    projectId: 'proj_smith_kitchen',
+    documentType: 'CONTRACT',
+    fileName: 'Smith_Gourmet_Kitchen_Signed_Agreement.pdf',
+    fileSize: 2450000,
+    mimeType: 'application/pdf',
+    secureStorageReference: 'companies/company_apex_builders/projects/proj_smith_kitchen/documents/doc_smith_contract_Smith_Gourmet_Kitchen_Signed_Agreement.pdf',
+    fileUrl: 'https://storage.googleapis.com/demo/smith_contract.pdf',
+    uploadedBy: 'Mike Rodriguez',
+    createdAt: '2026-05-20T10:30:00.000Z',
+  },
+  {
+    documentId: 'doc_smith_permit',
+    companyId: 'company_apex_builders',
+    projectId: 'proj_smith_kitchen',
+    documentType: 'PERMIT',
+    fileName: 'Springfield_Building_Permit_2026_0942.pdf',
+    fileSize: 890000,
+    mimeType: 'application/pdf',
+    secureStorageReference: 'companies/company_apex_builders/projects/proj_smith_kitchen/documents/doc_smith_permit_Springfield_Building_Permit_2026_0942.pdf',
+    fileUrl: 'https://storage.googleapis.com/demo/smith_permit.pdf',
+    uploadedBy: 'Sarah Chen',
+    createdAt: '2026-05-28T14:15:00.000Z',
   },
 ];
 
@@ -103,6 +203,7 @@ export const DEMO_PROJECTS: Project[] = [
     projectId: 'proj_smith_kitchen',
     companyId: 'company_apex_builders',
     projectName: 'Smith Kitchen Remodel',
+    clientId: 'client_smith',
     clientName: 'Robert & Emily Smith',
     projectAddress: '742 Evergreen Terrace, Springfield, OR',
     contractValue: 35000,
@@ -116,6 +217,7 @@ export const DEMO_PROJECTS: Project[] = [
     projectId: 'proj_highland_bath',
     companyId: 'company_apex_builders',
     projectName: 'Highland Master Bath',
+    clientId: 'client_highland',
     clientName: 'David Highland',
     projectAddress: '1420 Highland Ave, Lakeview, OR',
     contractValue: 24500,
@@ -129,6 +231,7 @@ export const DEMO_PROJECTS: Project[] = [
     projectId: 'proj_oakridge_deck',
     companyId: 'company_apex_builders',
     projectName: 'Oakridge Custom Timber Deck',
+    clientId: 'client_oakridge',
     clientName: 'Karen Vance',
     projectAddress: '88 Oakridge Ridge Rd, Pine Valley, OR',
     contractValue: 18000,
@@ -142,6 +245,7 @@ export const DEMO_PROJECTS: Project[] = [
     projectId: 'proj_metro_hvac',
     companyId: 'company_apex_builders',
     projectName: 'Metro Commercial HVAC Retrofit',
+    clientId: 'client_metro',
     clientName: 'Metro Properties Inc.',
     projectAddress: '400 Industrial Parkway, Suite 200, Eugene, OR',
     contractValue: 48000,
@@ -155,6 +259,7 @@ export const DEMO_PROJECTS: Project[] = [
     projectId: 'proj_sunset_paint',
     companyId: 'company_apex_builders',
     projectName: 'Sunset Hills Exterior Painting',
+    clientId: 'client_sunset',
     clientName: 'Marcus Wright',
     projectAddress: '310 Sunset Hills Court, Oak Hills, OR',
     contractValue: 12500,

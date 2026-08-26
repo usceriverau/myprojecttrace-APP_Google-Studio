@@ -7,6 +7,7 @@
 import { collection, doc, getDocs, setDoc, updateDoc, deleteDoc, query, orderBy, collectionGroup, where } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { ProjectNote } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const projectNoteRepository = {
   async getProjectNotes(companyId: string, projectId: string): Promise<ProjectNote[]> {
@@ -41,21 +42,23 @@ export const projectNoteRepository = {
   async addProjectNote(companyId: string, projectId: string, note: ProjectNote): Promise<ProjectNote> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'projects', projectId, 'notes', note.noteId);
-    await setDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...note,
       companyId,
       projectId,
     });
+    await setDoc(docRef, sanitized);
     return note;
   },
 
   async updateProjectNote(companyId: string, projectId: string, noteId: string, updates: Partial<ProjectNote>): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'projects', projectId, 'notes', noteId);
-    await updateDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...updates,
       updatedAt: new Date().toISOString(),
     });
+    await updateDoc(docRef, sanitized);
   },
 
   async deleteProjectNote(companyId: string, projectId: string, noteId: string): Promise<void> {
@@ -64,3 +67,4 @@ export const projectNoteRepository = {
     await deleteDoc(docRef);
   },
 };
+

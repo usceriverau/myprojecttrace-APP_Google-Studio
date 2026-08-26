@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Payment, Purchase, ReceiptPage, PurchaseItem } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const paymentRepository = {
   async getPayments(companyId: string, projectId?: string): Promise<Payment[]> {
@@ -29,21 +30,23 @@ export const paymentRepository = {
   async createPayment(companyId: string, payment: Payment): Promise<Payment> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'payments', payment.paymentId);
-    await setDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...payment,
       companyId,
     });
+    await setDoc(docRef, sanitized);
     return payment;
   },
 
   async updatePayment(companyId: string, paymentId: string, data: Partial<Payment>): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'payments', paymentId);
-    await updateDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...data,
       companyId,
       paymentId,
     });
+    await updateDoc(docRef, sanitized);
   },
 
   async deletePayment(companyId: string, paymentId: string): Promise<void> {
@@ -81,19 +84,22 @@ export const purchaseRepository = {
   ): Promise<Purchase> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'purchases', purchase.purchaseId);
-    await setDoc(docRef, {
+    const sanitizedPurchase = sanitizeForFirestore({
       ...purchase,
       companyId,
     });
+    await setDoc(docRef, sanitizedPurchase);
 
     for (const page of pages) {
       const pageRef = doc(db, 'companies', companyId, 'purchases', purchase.purchaseId, 'receiptPages', page.receiptPageId);
-      await setDoc(pageRef, { ...page, companyId, purchaseId: purchase.purchaseId });
+      const sanitizedPage = sanitizeForFirestore({ ...page, companyId, purchaseId: purchase.purchaseId });
+      await setDoc(pageRef, sanitizedPage);
     }
 
     for (const item of items) {
       const itemRef = doc(db, 'companies', companyId, 'purchases', purchase.purchaseId, 'items', item.itemId);
-      await setDoc(itemRef, { ...item, companyId, purchaseId: purchase.purchaseId });
+      const sanitizedItem = sanitizeForFirestore({ ...item, companyId, purchaseId: purchase.purchaseId });
+      await setDoc(itemRef, sanitizedItem);
     }
 
     return purchase;
@@ -106,11 +112,12 @@ export const purchaseRepository = {
   ): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'purchases', purchaseId);
-    await updateDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...data,
       companyId,
       purchaseId,
     });
+    await updateDoc(docRef, sanitized);
   },
 
   async getReceiptPages(companyId: string, purchaseId: string): Promise<ReceiptPage[]> {
@@ -152,15 +159,16 @@ export const purchaseRepository = {
     // 3. Add new
     for (const item of newItems) {
       const itemRef = doc(db, 'companies', companyId, 'purchases', purchaseId, 'items', item.itemId);
-      batch.set(itemRef, {
+      batch.set(itemRef, sanitizeForFirestore({
         ...item,
         companyId,
         purchaseId,
-      });
+      }));
     }
 
     await batch.commit();
   },
+
 
   async deletePurchase(companyId: string, purchaseId: string): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');

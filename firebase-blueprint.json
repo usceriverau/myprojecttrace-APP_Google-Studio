@@ -24,11 +24,28 @@
         "companyId": { "type": "string", "maxLength": 128 },
         "name": { "type": "string", "maxLength": 150 },
         "email": { "type": "string", "format": "email", "maxLength": 200 },
-        "role": { "type": "string", "enum": ["OWNER", "ADMIN", "FIELD_USER"] },
+        "role": { "type": "string", "enum": ["OWNER", "ADMIN", "PROJECT_MANAGER", "FIELD_USER", "ACCOUNTING"] },
         "phone": { "type": "string", "maxLength": 30 },
         "createdAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["userId", "companyId", "name", "email", "role", "createdAt"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Client or homeowner entity associated with contractor projects.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "clientName": { "type": "string", "maxLength": 200 },
+        "address": { "type": "string", "maxLength": 300 },
+        "phone": { "type": "string", "maxLength": 50 },
+        "email": { "type": "string", "maxLength": 200 },
+        "notes": { "type": "string", "maxLength": 2000 },
+        "createdAt": { "type": "string", "maxLength": 50 },
+        "updatedAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["clientId", "companyId", "clientName", "createdAt"]
     },
     "Project": {
       "title": "Project",
@@ -38,6 +55,7 @@
         "projectId": { "type": "string", "maxLength": 128 },
         "companyId": { "type": "string", "maxLength": 128 },
         "projectName": { "type": "string", "maxLength": 200 },
+        "clientId": { "type": "string", "maxLength": 128 },
         "clientName": { "type": "string", "maxLength": 150 },
         "projectAddress": { "type": "string", "maxLength": 300 },
         "contractValue": { "type": "number" },
@@ -49,6 +67,25 @@
         "updatedAt": { "type": "string", "maxLength": 50 }
       },
       "required": ["projectId", "companyId", "projectName", "contractValue", "status", "createdAt"]
+    },
+    "ProjectDocument": {
+      "title": "ProjectDocument",
+      "description": "General project document files including contracts, permits, blueprints, and change orders.",
+      "type": "object",
+      "properties": {
+        "documentId": { "type": "string", "maxLength": 128 },
+        "companyId": { "type": "string", "maxLength": 128 },
+        "projectId": { "type": "string", "maxLength": 128 },
+        "documentType": { "type": "string", "enum": ["CONTRACT", "CHANGE_ORDER", "PERMIT", "BLUEPRINT", "INVOICE", "OTHER"] },
+        "fileName": { "type": "string", "maxLength": 300 },
+        "fileSize": { "type": "number" },
+        "mimeType": { "type": "string", "maxLength": 100 },
+        "secureStorageReference": { "type": "string", "maxLength": 500 },
+        "fileUrl": { "type": "string", "maxLength": 1000 },
+        "uploadedBy": { "type": "string", "maxLength": 150 },
+        "createdAt": { "type": "string", "maxLength": 50 }
+      },
+      "required": ["documentId", "companyId", "projectId", "documentType", "fileName", "mimeType", "secureStorageReference", "fileUrl", "uploadedBy", "createdAt"]
     },
     "Provider": {
       "title": "Provider",

@@ -50,7 +50,7 @@ export const FloatingSpeedDial: React.FC<FloatingSpeedDialProps> = ({
             
             {/* Action 1: Jobsite Progress Media */}
             <div className="flex items-center gap-2.5">
-              <span className="bg-slate-900/90 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
+              <span className="bg-slate-900/90 text-white text-sm font-bold px-3.5 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
                 Jobsite Media & Progress
               </span>
               <button
@@ -66,7 +66,7 @@ export const FloatingSpeedDial: React.FC<FloatingSpeedDialProps> = ({
 
             {/* Action 2: Collections & Payments */}
             <div className="flex items-center gap-2.5">
-              <span className="bg-slate-900/90 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
+              <span className="bg-slate-900/90 text-white text-sm font-bold px-3.5 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
                 Collections & Payments
               </span>
               <button
@@ -82,7 +82,7 @@ export const FloatingSpeedDial: React.FC<FloatingSpeedDialProps> = ({
 
             {/* Action 3: AI OCR Receipt Capture */}
             <div className="flex items-center gap-2.5">
-              <span className="bg-slate-900/90 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
+              <span className="bg-slate-900/90 text-white text-sm font-bold px-3.5 py-1.5 rounded-xl shadow-md border border-slate-700 whitespace-nowrap">
                 AI OCR Receipt Capture
               </span>
               <button

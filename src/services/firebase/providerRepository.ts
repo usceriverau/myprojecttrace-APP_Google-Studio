@@ -7,6 +7,7 @@
 import { collection, doc, getDocs, getDoc, setDoc, updateDoc, deleteDoc, query, orderBy } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { Provider } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const providerRepository = {
   async getProviders(companyId: string): Promise<Provider[]> {
@@ -28,21 +29,23 @@ export const providerRepository = {
   async createProvider(companyId: string, provider: Provider): Promise<Provider> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'providers', provider.providerId);
-    await setDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...provider,
       companyId,
     });
+    await setDoc(docRef, sanitized);
     return provider;
   },
 
   async updateProvider(companyId: string, providerId: string, updates: Partial<Provider>): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', companyId, 'providers', providerId);
-    await updateDoc(docRef, {
+    const sanitized = sanitizeForFirestore({
       ...updates,
       companyId,
       providerId,
     });
+    await updateDoc(docRef, sanitized);
   },
 
   async deleteProvider(companyId: string, providerId: string): Promise<void> {
@@ -51,3 +54,4 @@ export const providerRepository = {
     await deleteDoc(docRef);
   },
 };
+

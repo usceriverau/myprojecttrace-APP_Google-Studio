@@ -3,9 +3,37 @@
  * Core TypeScript Definitions
  */
 
-export type UserRole = 'OWNER' | 'ADMIN' | 'FIELD_USER';
+export type UserRole = 'OWNER' | 'ADMIN' | 'PROJECT_MANAGER' | 'FIELD_USER' | 'ACCOUNTING';
 
 export type ProjectStatus = 'ACTIVE' | 'COMPLETED' | 'ON_HOLD';
+
+export interface Client {
+  clientId: string;
+  companyId: string;
+  clientName: string;
+  address?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt?: string;
+}
+
+export type DocumentType = 'CONTRACT' | 'CHANGE_ORDER' | 'PERMIT' | 'BLUEPRINT' | 'INVOICE' | 'OTHER';
+
+export interface ProjectDocument {
+  documentId: string;
+  companyId: string;
+  projectId: string;
+  documentType: DocumentType;
+  fileName: string;
+  fileSize?: number;
+  mimeType: string;
+  secureStorageReference?: string;
+  fileUrl: string;
+  uploadedBy: string;
+  createdAt: string;
+}
 
 export type CaptureStatus = 
   | 'DRAFT'
@@ -72,7 +100,8 @@ export interface Project {
   projectId: string;
   companyId: string;
   projectName: string;
-  clientName: string;
+  clientId?: string; // Relational foreign key
+  clientName?: string; // Display cache / computed helper
   projectAddress: string;
   contractValue: number;
   approvedChangeOrders: number;

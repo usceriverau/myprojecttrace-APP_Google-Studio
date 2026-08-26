@@ -16,18 +16,21 @@ import React, { createContext, useContext, useState, useEffect, ReactNode, useMe
 import { 
   Project, Purchase, Payment, FinancialAlert, 
   ProjectFinancialMetrics, ReceiptPage, PurchaseItem, CaptureStatus,
-  Provider, DuplicatePurchaseCandidate, ProjectPhoto, ProjectNote, PhotoPhase 
+  Provider, DuplicatePurchaseCandidate, ProjectPhoto, ProjectNote, PhotoPhase,
+  Client, ProjectDocument, DocumentType
 } from '../types';
 import { 
   DEMO_COMPANY, DEMO_PROJECTS, DEMO_PURCHASES, DEMO_PAYMENTS, 
   DEMO_RECEIPT_PAGES, DEMO_PURCHASE_ITEMS, DEMO_PROVIDERS,
-  DEMO_PROJECT_PHOTOS, DEMO_PROJECT_NOTES 
+  DEMO_PROJECT_PHOTOS, DEMO_PROJECT_NOTES, DEMO_CLIENTS, DEMO_PROJECT_DOCUMENTS
 } from '../services/mockSeedData';
 import { calculateProjectMetrics } from '../services/financialFormulas';
 import { evaluateProjectFinancialRisk } from '../services/riskEngine';
 import { useAuth } from './AuthContext';
 import { generateId } from '../lib/utils';
 import { projectRepository } from '../services/firebase/projectRepository';
+import { clientRepository } from '../services/firebase/clientRepository';
+import { documentRepository } from '../services/firebase/documentRepository';
 import { paymentRepository, purchaseRepository } from '../services/firebase/financialDataRepository';
 import { providerRepository } from '../services/firebase/providerRepository';
 import { progressPhotoRepository } from '../services/firebase/progressPhotoRepository';
@@ -44,6 +47,7 @@ import {
 } from '../services/purchaseConfirmationService';
 import { 
   generateProjectPdfReport, 
+  exportProjectPdfWithServerFallback,
   generateProjectExcelTaxReport,
   generateCompanyCpaExcelReport,
   generateAnnualExcelReport,
@@ -52,6 +56,8 @@ import {
 
 interface ProjectContextType {
   projects: Project[];
+  clients: Client[];
+  projectDocuments: ProjectDocument[];
   purchases: Purchase[];
   payments: Payment[];
   receiptPages: ReceiptPage[];
@@ -69,9 +75,14 @@ interface ProjectContextType {
   isLoadingProjects: boolean;
   
   // Phase 1 Mutations
-  createProject: (data: Omit<Project, 'projectId' | 'companyId' | 'createdAt'>) => Promise<Project>;
-  updateProject: (projectId: string, data: Partial<Project>) => Promise<void>;
+  createProject: (data: Omit<Project, 'projectId' | 'companyId' | 'createdAt'>, clientDetails?: Partial<Client>) => Promise<Project>;
+  updateProject: (projectId: string, data: Partial<Project>, clientDetails?: Partial<Client>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;
+  addClient: (clientData: Omit<Client, 'clientId' | 'companyId' | 'createdAt'>) => Promise<Client>;
+  updateClient: (clientId: string, updates: Partial<Client>) => Promise<void>;
+  deleteClient: (clientId: string) => Promise<void>;
+  uploadProjectDocument: (projectId: string, documentType: DocumentType, file: File) => Promise<ProjectDocument>;
+  deleteProjectDocument: (projectId: string, documentId: string, storageReference?: string) => Promise<void>;
   addPayment: (data: Omit<Payment, 'paymentId' | 'companyId' | 'createdAt'>) => Promise<Payment>;
   updatePayment: (paymentId: string, data: Partial<Payment>) => Promise<Payment>;
   deletePayment: (paymentId: string) => Promise<void>;
@@ -82,12 +93,14 @@ interface ProjectContextType {
   processReceiptCapture: (
     purchaseId: string,
     files: File[],
-    onProgress?: (status: CaptureStatus, stepText: string) => void
+    onProgress?: (status: CaptureStatus, stepText: string) => void,
+    signal?: AbortSignal
   ) => Promise<{ purchase: Purchase; items: PurchaseItem[]; pages: ReceiptPage[] }>;
   retryReceiptAnalysis: (
     purchaseId: string,
     files?: File[],
-    onProgress?: (status: CaptureStatus, stepText: string) => void
+    onProgress?: (status: CaptureStatus, stepText: string) => void,
+    signal?: AbortSignal
   ) => Promise<{ purchase: Purchase; items: PurchaseItem[]; pages: ReceiptPage[] }>;
   deleteDraftPurchase: (purchaseId: string) => Promise<void>;
 
@@ -129,6 +142,8 @@ interface ProjectContextType {
 const ProjectContext = createContext<ProjectContextType | undefined>(undefined);
 
 const LOCAL_STORAGE_KEY_PROJECTS = 'mpt_projects';
+const LOCAL_STORAGE_KEY_CLIENTS = 'mpt_clients';
+const LOCAL_STORAGE_KEY_DOCUMENTS = 'mpt_project_documents';
 const LOCAL_STORAGE_KEY_PURCHASES = 'mpt_purchases';
 const LOCAL_STORAGE_KEY_PAYMENTS = 'mpt_payments';
 const LOCAL_STORAGE_KEY_PAGES = 'mpt_receipt_pages';
@@ -149,6 +164,28 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
         try { return JSON.parse(saved); } catch {}
       }
       return DEMO_PROJECTS;
+    }
+    return [];
+  });
+
+  const [clients, setClients] = useState<Client[]>(() => {
+    if (authState === 'DEMO_MODE') {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_CLIENTS);
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+      return DEMO_CLIENTS;
+    }
+    return [];
+  });
+
+  const [projectDocuments, setProjectDocuments] = useState<ProjectDocument[]>(() => {
+    if (authState === 'DEMO_MODE') {
+      const saved = localStorage.getItem(LOCAL_STORAGE_KEY_DOCUMENTS);
+      if (saved) {
+        try { return JSON.parse(saved); } catch {}
+      }
+      return DEMO_PROJECT_DOCUMENTS;
     }
     return [];
   });
@@ -249,6 +286,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     try {
       const [
         firestoreProjects, 
+        firestoreClients,
+        firestoreDocuments,
         firestorePayments, 
         firestorePurchases, 
         firestoreProviders,
@@ -256,6 +295,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
         firestoreNotes,
       ] = await Promise.all([
         projectRepository.getProjects(currentCompany.companyId),
+        clientRepository.getClients(currentCompany.companyId),
+        documentRepository.getAllCompanyDocuments(currentCompany.companyId),
         paymentRepository.getPayments(currentCompany.companyId),
         purchaseRepository.getPurchases(currentCompany.companyId),
         providerRepository.getProviders(currentCompany.companyId),
@@ -264,6 +305,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       ]);
 
       setProjects(firestoreProjects);
+      setClients(firestoreClients);
+      setProjectDocuments(firestoreDocuments);
       setPayments(firestorePayments);
       setPurchases(firestorePurchases);
       setProviders(firestoreProviders);
@@ -281,6 +324,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       refreshProjectData();
     } else if (authState === 'DEMO_MODE') {
       const savedProjs = localStorage.getItem(LOCAL_STORAGE_KEY_PROJECTS);
+      const savedClients = localStorage.getItem(LOCAL_STORAGE_KEY_CLIENTS);
+      const savedDocs = localStorage.getItem(LOCAL_STORAGE_KEY_DOCUMENTS);
       const savedPurch = localStorage.getItem(LOCAL_STORAGE_KEY_PURCHASES);
       const savedPay = localStorage.getItem(LOCAL_STORAGE_KEY_PAYMENTS);
       const savedPages = localStorage.getItem(LOCAL_STORAGE_KEY_PAGES);
@@ -290,6 +335,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       const savedNotes = localStorage.getItem(LOCAL_STORAGE_KEY_NOTES);
 
       setProjects(savedProjs ? JSON.parse(savedProjs) : DEMO_PROJECTS);
+      setClients(savedClients ? JSON.parse(savedClients) : DEMO_CLIENTS);
+      setProjectDocuments(savedDocs ? JSON.parse(savedDocs) : DEMO_PROJECT_DOCUMENTS);
       setPurchases(savedPurch ? JSON.parse(savedPurch) : DEMO_PURCHASES);
       setPayments(savedPay ? JSON.parse(savedPay) : DEMO_PAYMENTS);
       setReceiptPages(savedPages ? JSON.parse(savedPages) : DEMO_RECEIPT_PAGES);
@@ -299,6 +346,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       setProjectNotes(savedNotes ? JSON.parse(savedNotes) : DEMO_PROJECT_NOTES);
     } else {
       setProjects([]);
+      setClients([]);
+      setProjectDocuments([]);
       setPurchases([]);
       setPayments([]);
       setReceiptPages([]);
@@ -313,6 +362,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   useEffect(() => {
     if (authState === 'DEMO_MODE') {
       localStorage.setItem(LOCAL_STORAGE_KEY_PROJECTS, JSON.stringify(projects));
+      localStorage.setItem(LOCAL_STORAGE_KEY_CLIENTS, JSON.stringify(clients));
+      localStorage.setItem(LOCAL_STORAGE_KEY_DOCUMENTS, JSON.stringify(projectDocuments));
       localStorage.setItem(LOCAL_STORAGE_KEY_PURCHASES, JSON.stringify(purchases));
       localStorage.setItem(LOCAL_STORAGE_KEY_PAYMENTS, JSON.stringify(payments));
       localStorage.setItem(LOCAL_STORAGE_KEY_PAGES, JSON.stringify(receiptPages));
@@ -321,7 +372,7 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       localStorage.setItem(LOCAL_STORAGE_KEY_PHOTOS, JSON.stringify(projectPhotos));
       localStorage.setItem(LOCAL_STORAGE_KEY_NOTES, JSON.stringify(projectNotes));
     }
-  }, [projects, purchases, payments, receiptPages, purchaseItems, providers, projectPhotos, projectNotes, authState]);
+  }, [projects, clients, projectDocuments, purchases, payments, receiptPages, purchaseItems, providers, projectPhotos, projectNotes, authState]);
 
   // Only CONFIRMED purchases count towards financial metrics and project expenses
   const confirmedPurchases = useMemo(() => {
@@ -372,24 +423,184 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   // ----------------------------------------------------
+  // CLIENT & DOCUMENT MUTATIONS
+  // ----------------------------------------------------
+  const addClient = async (
+    clientData: Omit<Client, 'clientId' | 'companyId' | 'createdAt'>
+  ): Promise<Client> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    const clientId = generateId('client');
+    const newClient: Client = {
+      ...clientData,
+      clientId,
+      companyId,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (isLiveFirestoreActive) {
+      await clientRepository.createClient(companyId, newClient);
+    }
+    setClients(prev => [newClient, ...prev]);
+    return newClient;
+  };
+
+  const updateClient = async (clientId: string, updates: Partial<Client>): Promise<void> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    if (isLiveFirestoreActive) {
+      await clientRepository.updateClient(companyId, clientId, updates);
+    }
+    setClients(prev =>
+      prev.map(c => (c.clientId === clientId ? { ...c, ...updates, updatedAt: new Date().toISOString() } : c))
+    );
+  };
+
+  const deleteClient = async (clientId: string): Promise<void> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    if (isLiveFirestoreActive) {
+      await clientRepository.deleteClient(companyId, clientId);
+    }
+    setClients(prev => prev.filter(c => c.clientId !== clientId));
+  };
+
+  const uploadProjectDocument = async (
+    projectId: string,
+    documentType: DocumentType,
+    file: File
+  ): Promise<ProjectDocument> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    const documentId = generateId('doc');
+    const authorName = currentUser?.name || 'Staff';
+
+    if (isLiveFirestoreActive) {
+      const created = await documentRepository.uploadAndSaveDocument(
+        companyId,
+        projectId,
+        documentType,
+        file,
+        authorName
+      );
+      setProjectDocuments(prev => [created, ...prev]);
+      return created;
+    } else {
+      // Demo / Offline mode: store base64 or blob URL
+      const fileUrl = URL.createObjectURL(file);
+      const demoDoc: ProjectDocument = {
+        documentId,
+        projectId,
+        companyId,
+        documentType,
+        fileName: file.name,
+        fileUrl,
+        fileSize: file.size,
+        mimeType: file.type || 'application/pdf',
+        uploadedBy: authorName,
+        createdAt: new Date().toISOString(),
+      };
+      setProjectDocuments(prev => [demoDoc, ...prev]);
+      return demoDoc;
+    }
+  };
+
+  const deleteProjectDocument = async (
+    projectId: string,
+    documentId: string,
+    storageReference?: string
+  ): Promise<void> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    if (isLiveFirestoreActive) {
+      await documentRepository.deleteProjectDocument(companyId, projectId, documentId, storageReference);
+    }
+    setProjectDocuments(prev => prev.filter(d => d.documentId !== documentId));
+  };
+
+  // ----------------------------------------------------
   // PHASE 1 MUTATIONS
   // ----------------------------------------------------
-  const createProject = async (data: Omit<Project, 'projectId' | 'companyId' | 'createdAt'>): Promise<Project> => {
+  const createProject = async (
+    data: Omit<Project, 'projectId' | 'companyId' | 'createdAt'>,
+    clientDetails?: Partial<Client>
+  ): Promise<Project> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    let resolvedClientId = data.clientId;
+
+    // Automatic find-or-create Client mapping if clientName is provided
+    if (data.clientName?.trim()) {
+      const trimmedName = data.clientName.trim();
+      try {
+        if (isLiveFirestoreActive) {
+          const client = await clientRepository.findOrCreateClientByName(
+            companyId,
+            trimmedName,
+            {
+              ...(data.projectAddress ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+            }
+          );
+          resolvedClientId = client.clientId;
+          setClients(prev => {
+            const idx = prev.findIndex(c => c.clientId === client.clientId);
+            if (idx >= 0) {
+              const updatedList = [...prev];
+              updatedList[idx] = { ...updatedList[idx], ...client };
+              return updatedList;
+            }
+            return [client, ...prev];
+          });
+        } else {
+          // Demo / Local Mode client matching
+          const matched = clients.find(c => c.clientName.toLowerCase() === trimmedName.toLowerCase());
+          if (matched) {
+            resolvedClientId = matched.clientId;
+            const updatedClient: Client = {
+              ...matched,
+              ...(data.projectAddress && !matched.address ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+              updatedAt: new Date().toISOString(),
+            };
+            setClients(prev => prev.map(c => c.clientId === matched.clientId ? updatedClient : c));
+          } else {
+            const newClientId = generateId('client');
+            resolvedClientId = newClientId;
+            const newClient: Client = {
+              clientId: newClientId,
+              companyId,
+              clientName: trimmedName,
+              ...(data.projectAddress ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            setClients(prev => [newClient, ...prev]);
+          }
+        }
+      } catch (clientErr) {
+        console.warn('[MyProjectTrace] Automatic client creation fallback:', clientErr);
+      }
+    }
+
     const newProject: Project = {
       ...data,
+      clientId: resolvedClientId,
       projectId: generateId('proj'),
-      companyId: currentCompany.companyId,
+      companyId,
       createdAt: new Date().toISOString(),
     };
 
     if (isLiveFirestoreActive) {
       try {
-        await projectRepository.createProject(currentCompany.companyId, newProject);
+        await projectRepository.createProject(companyId, newProject);
         setProjects(prev => [newProject, ...prev]);
         return newProject;
-      } catch (err) {
+      } catch (err: any) {
         console.error('[MyProjectTrace] Firestore createProject error:', err);
-        throw new Error("We couldn't save this project. Please check your connection and try again.");
+        throw new Error(err?.message || "We couldn't save this project. Please check your connection and try again.");
       }
     } else {
       setProjects(prev => [newProject, ...prev]);
@@ -397,26 +608,93 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
   };
 
-  const updateProject = async (projectId: string, data: Partial<Project>): Promise<void> => {
+  const updateProject = async (
+    projectId: string,
+    data: Partial<Project>,
+    clientDetails?: Partial<Client>
+  ): Promise<void> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
+    const updates: Partial<Project> = { ...data };
+
+    if (data.clientName?.trim()) {
+      const trimmedName = data.clientName.trim();
+      try {
+        if (isLiveFirestoreActive) {
+          const client = await clientRepository.findOrCreateClientByName(
+            companyId,
+            trimmedName,
+            {
+              ...(data.projectAddress ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+            }
+          );
+          updates.clientId = client.clientId;
+          setClients(prev => {
+            const idx = prev.findIndex(c => c.clientId === client.clientId);
+            if (idx >= 0) {
+              const updatedList = [...prev];
+              updatedList[idx] = { ...updatedList[idx], ...client };
+              return updatedList;
+            }
+            return [client, ...prev];
+          });
+        } else {
+          // Demo / Local Mode client matching
+          const matched = clients.find(c => c.clientName.toLowerCase() === trimmedName.toLowerCase());
+          if (matched) {
+            updates.clientId = matched.clientId;
+            const updatedClient: Client = {
+              ...matched,
+              ...(data.projectAddress && !matched.address ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+              updatedAt: new Date().toISOString(),
+            };
+            setClients(prev => prev.map(c => c.clientId === matched.clientId ? updatedClient : c));
+          } else {
+            const newClientId = generateId('client');
+            updates.clientId = newClientId;
+            const newClient: Client = {
+              clientId: newClientId,
+              companyId,
+              clientName: trimmedName,
+              ...(data.projectAddress ? { address: data.projectAddress } : {}),
+              ...(clientDetails?.phone ? { phone: clientDetails.phone } : {}),
+              ...(clientDetails?.email ? { email: clientDetails.email } : {}),
+              ...(clientDetails?.notes ? { notes: clientDetails.notes } : {}),
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+            setClients(prev => [newClient, ...prev]);
+          }
+        }
+      } catch (clientErr) {
+        console.warn('[MyProjectTrace] Automatic client update fallback:', clientErr);
+      }
+    }
+
     if (isLiveFirestoreActive) {
       try {
-        await projectRepository.updateProject(currentCompany.companyId, projectId, data);
+        await projectRepository.updateProject(companyId, projectId, updates);
         setProjects(prev =>
           prev.map(p =>
             p.projectId === projectId
-              ? { ...p, ...data, updatedAt: new Date().toISOString() }
+              ? { ...p, ...updates, updatedAt: new Date().toISOString() }
               : p
           )
         );
-      } catch (err) {
+      } catch (err: any) {
         console.error('[MyProjectTrace] Firestore updateProject error:', err);
-        throw new Error("We couldn't save this project. Please check your connection and try again.");
+        throw new Error(err?.message || "We couldn't save this project. Please check your connection and try again.");
       }
     } else {
       setProjects(prev =>
         prev.map(p =>
           p.projectId === projectId
-            ? { ...p, ...data, updatedAt: new Date().toISOString() }
+            ? { ...p, ...updates, updatedAt: new Date().toISOString() }
             : p
         )
       );
@@ -424,16 +702,17 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   };
 
   const deleteProject = async (projectId: string): Promise<void> => {
+    const companyId = currentCompany?.companyId || DEMO_COMPANY.companyId;
     if (isLiveFirestoreActive) {
       try {
-        await projectRepository.deleteProject(currentCompany.companyId, projectId);
+        await projectRepository.deleteProject(companyId, projectId);
         setProjects(prev => prev.filter(p => p.projectId !== projectId));
         if (selectedProjectId === projectId) {
           setSelectedProjectId(null);
         }
-      } catch (err) {
+      } catch (err: any) {
         console.error('[MyProjectTrace] Firestore deleteProject error:', err);
-        throw new Error("We couldn't delete this project. Please check your connection and try again.");
+        throw new Error(err?.message || "We couldn't delete this project. Please check your connection and try again.");
       }
     } else {
       setProjects(prev => prev.filter(p => p.projectId !== projectId));
@@ -576,19 +855,28 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const processReceiptCapture = async (
     purchaseId: string,
     files: File[],
-    onProgress?: (status: CaptureStatus, stepText: string) => void
+    onProgress?: (status: CaptureStatus, stepText: string) => void,
+    signal?: AbortSignal
   ): Promise<{ purchase: Purchase; items: PurchaseItem[]; pages: ReceiptPage[] }> => {
     if (!files || files.length === 0) {
       throw new Error('At least one receipt photo is required.');
     }
 
+    if (signal?.aborted) {
+      throw new DOMException('Capture aborted by user', 'AbortError');
+    }
+
     const companyId = currentCompany.companyId;
 
     // STEP 1: Client-Side Optimization & Storage Upload
-    onProgress?.('UPLOADING', 'Reading receipt...');
+    onProgress?.('UPLOADING', '1. Optimizing image payload (<300KB)...');
     
-    // Optimize images first to minimize network bandwidth and storage latency
+    // Fast client-side canvas compression to 1500px max dimension, 0.78 JPEG
     const { files: optimizedFiles } = await optimizeReceiptImages(files);
+
+    if (signal?.aborted) {
+      throw new DOMException('Capture aborted by user', 'AbortError');
+    }
 
     // Update local & firestore status to UPLOADING
     const uploadingUpdate: Partial<Purchase> = {
@@ -600,36 +888,16 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     setPurchases(prev => prev.map(p => p.purchaseId === purchaseId ? { ...p, ...uploadingUpdate } : p));
 
-    // Upload optimized pages in parallel
-    const uploadPromises = optimizedFiles.map(async (file, i) => {
-      const pageNum = i + 1;
-      const uploadRes = await storageService.uploadReceiptPageImage(companyId, purchaseId, pageNum, file);
-      return {
-        uploadedPage: {
-          pageNumber: pageNum,
-          file,
-          previewUrl: uploadRes.imageUrl,
-          imageStoragePath: uploadRes.imageStoragePath,
-          imageUrl: uploadRes.imageUrl,
-        } as PreparedReceiptPage,
-        createdPage: {
-          receiptPageId: `page_${generateId()}`,
-          companyId,
-          purchaseId,
-          pageNumber: pageNum,
-          imageStoragePath: uploadRes.imageStoragePath,
-          imageUrl: uploadRes.imageUrl,
-          createdAt: new Date().toISOString(),
-        } as ReceiptPage,
-      };
-    });
+    // Prepare pages for fast immediate analysis
+    const preparedPagesForOcr: PreparedReceiptPage[] = optimizedFiles.map((file, i) => ({
+      pageNumber: i + 1,
+      file,
+      previewUrl: (file as any)._optimizedBase64 || '',
+      imageUrl: (file as any)._optimizedBase64 || '',
+    }));
 
-    const uploadResults = await Promise.all(uploadPromises);
-    const uploadedPages: PreparedReceiptPage[] = uploadResults.map(r => r.uploadedPage);
-    const createdReceiptPages: ReceiptPage[] = uploadResults.map(r => r.createdPage);
-
-    // STEP 2: Server-Side Gemini AI OCR & Line Item Extraction
-    onProgress?.('PROCESSING', 'Extracting purchase details...');
+    // STEP 2: Server-Side Gemini AI OCR & Line Item Extraction in parallel with storage persistence
+    onProgress?.('PROCESSING', '2. Gemini AI Fast OCR & Extraction...');
     
     const processingUpdate: Partial<Purchase> = {
       captureStatus: 'PROCESSING',
@@ -639,18 +907,38 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     }
     setPurchases(prev => prev.map(p => p.purchaseId === purchaseId ? { ...p, ...processingUpdate } : p));
 
-    const analysisRes = await receiptAnalysisService.analyzeReceipt(
-      companyId,
-      purchaseId,
-      uploadedPages
-    );
+    // Run OCR analysis and cloud storage upload concurrently
+    const [analysisRes, uploadResults] = await Promise.all([
+      receiptAnalysisService.analyzeReceipt(
+        companyId,
+        purchaseId,
+        preparedPagesForOcr,
+        signal
+      ),
+      Promise.all(
+        optimizedFiles.map(async (file, i) => {
+          const pageNum = i + 1;
+          const uploadRes = await storageService.uploadReceiptPageImage(companyId, purchaseId, pageNum, file);
+          return {
+            receiptPageId: `page_${generateId()}`,
+            companyId,
+            purchaseId,
+            pageNumber: pageNum,
+            imageStoragePath: uploadRes.imageStoragePath,
+            imageUrl: uploadRes.imageUrl,
+            createdAt: new Date().toISOString(),
+          } as ReceiptPage;
+        })
+      ),
+    ]);
 
     const { analysis, purchaseItems: newItems, warnings, modelUsed } = analysisRes;
+    const createdReceiptPages: ReceiptPage[] = uploadResults;
 
     // STEP 3: Complete Analysis -> Transition to NEEDS_REVIEW
     onProgress?.('NEEDS_REVIEW', 'Extraction complete. Ready for verification.');
 
-    const activeModel = modelUsed || 'gemini-2.5-flash';
+    const activeModel = modelUsed || 'gemini-flash-latest';
     const analyzedPurchaseUpdate: Partial<Purchase> = {
       providerName: analysis.merchant_name || 'Unidentified Merchant',
       purchaseDate: analysis.transaction_date || new Date().toISOString().split('T')[0],
@@ -711,11 +999,12 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
   const retryReceiptAnalysis = async (
     purchaseId: string,
     files?: File[],
-    onProgress?: (status: CaptureStatus, stepText: string) => void
+    onProgress?: (status: CaptureStatus, stepText: string) => void,
+    signal?: AbortSignal
   ): Promise<{ purchase: Purchase; items: PurchaseItem[]; pages: ReceiptPage[] }> => {
     // If new files were supplied, run full capture workflow
     if (files && files.length > 0) {
-      return processReceiptCapture(purchaseId, files, onProgress);
+      return processReceiptCapture(purchaseId, files, onProgress, signal);
     }
 
     // Otherwise use existing stored pages
@@ -737,7 +1026,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     const analysisRes = await receiptAnalysisService.analyzeReceipt(
       currentCompany.companyId,
       purchaseId,
-      preparedPages
+      preparedPages,
+      signal
     );
 
     const { analysis, purchaseItems: newItems, warnings, modelUsed } = analysisRes;
@@ -1012,7 +1302,7 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     const projectPhotosList = getProjectPhotos(projectId);
     const company = currentCompany || DEMO_COMPANY;
 
-    await generateProjectPdfReport({
+    await exportProjectPdfWithServerFallback({
       project,
       metrics,
       purchases: projectPurchases,
@@ -1021,6 +1311,7 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
       photos: projectPhotosList,
       company,
       authorName: currentUser?.name || 'Staff',
+      userRole: currentUser?.role || 'FIELD_USER',
     });
   };
 
@@ -1159,6 +1450,8 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
     <ProjectContext.Provider
       value={{
         projects,
+        clients,
+        projectDocuments,
         purchases,
         payments,
         receiptPages,
@@ -1177,6 +1470,11 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
         createProject,
         updateProject,
         deleteProject,
+        addClient,
+        updateClient,
+        deleteClient,
+        uploadProjectDocument,
+        deleteProjectDocument,
         addPayment,
         updatePayment,
         deletePayment,

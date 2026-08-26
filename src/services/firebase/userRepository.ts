@@ -8,6 +8,7 @@
 import { doc, getDoc, setDoc, getDocs, collection } from 'firebase/firestore';
 import { db } from '../../lib/firebase';
 import { User } from '../../types';
+import { sanitizeForFirestore } from '../../lib/utils';
 
 export const userRepository = {
   async getUser(companyId: string, userId: string): Promise<User | null> {
@@ -21,16 +22,16 @@ export const userRepository = {
   async createUser(user: User): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const docRef = doc(db, 'companies', user.companyId, 'users', user.userId);
-    await setDoc(docRef, user);
+    await setDoc(docRef, sanitizeForFirestore(user));
 
     // Store minimal lookup mapping at /user_directory/{userId} for fast company resolution
     try {
       const dirRef = doc(db, 'user_directory', user.userId);
-      await setDoc(dirRef, {
+      await setDoc(dirRef, sanitizeForFirestore({
         userId: user.userId,
         companyId: user.companyId,
         createdAt: user.createdAt,
-      });
+      }));
     } catch (err) {
       console.warn('[MyProjectTrace] Could not write user_directory mapping:', err);
     }
@@ -39,11 +40,11 @@ export const userRepository = {
   async setUserDirectoryMapping(userId: string, companyId: string): Promise<void> {
     if (!db) throw new Error('Firestore not initialized');
     const dirRef = doc(db, 'user_directory', userId);
-    await setDoc(dirRef, {
+    await setDoc(dirRef, sanitizeForFirestore({
       userId,
       companyId,
       createdAt: new Date().toISOString(),
-    });
+    }));
   },
 
   async getCompanyUsers(companyId: string): Promise<User[]> {
@@ -70,3 +71,4 @@ export const userRepository = {
     return null;
   },
 };
+

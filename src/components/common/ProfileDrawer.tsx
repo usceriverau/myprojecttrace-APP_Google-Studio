@@ -49,19 +49,19 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
         {/* Header */}
         <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-[#03225F] text-white flex items-center justify-center font-black text-base shadow-sm">
+            <div className="w-11 h-11 rounded-2xl bg-[#03225F] text-white flex items-center justify-center font-black text-lg shadow-sm">
               {currentUser.name.charAt(0)}
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-base font-black text-slate-900 leading-tight">
+                <h2 className="text-lg font-black text-slate-900 leading-tight">
                   {currentUser.name}
                 </h2>
-                <span className="text-[10px] font-extrabold bg-blue-100 text-[#054AC6] px-2 py-0.5 rounded-md uppercase tracking-wider">
+                <span className="text-xs font-extrabold bg-blue-100 text-[#054AC6] px-2.5 py-0.5 rounded-md uppercase tracking-wider">
                   {currentUser.role}
                 </span>
               </div>
-              <p className="text-xs text-slate-500 font-medium mt-0.5 truncate max-w-[200px]">
+              <p className="text-sm text-slate-500 font-medium mt-0.5 truncate max-w-[220px]">
                 {currentUser.email}
               </p>
             </div>
@@ -81,31 +81,31 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
           {/* Company & Environment Card */}
           <div className="bg-slate-50 rounded-2xl p-4 border border-slate-200/80 space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
                 Workspace & Company
               </span>
               {isDemoMode ? (
-                <span className="text-[10px] bg-blue-100 text-[#054AC6] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-blue-200">
-                  <Sparkles className="w-2.5 h-2.5" />
+                <span className="text-xs bg-blue-100 text-[#054AC6] font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-blue-200">
+                  <Sparkles className="w-3 h-3" />
                   Interactive Demo
                 </span>
               ) : (
-                <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
-                  <Cloud className="w-2.5 h-2.5" />
+                <span className="text-xs bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-200">
+                  <Cloud className="w-3 h-3" />
                   Cloud Live
                 </span>
               )}
             </div>
 
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-white border border-slate-200 text-[#054AC6] flex items-center justify-center shrink-0 shadow-2xs">
-                <Building2 className="w-4 h-4" />
+              <div className="w-9 h-9 rounded-xl bg-white border border-slate-200 text-[#054AC6] flex items-center justify-center shrink-0 shadow-2xs">
+                <Building2 className="w-4.5 h-4.5" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-slate-900 truncate">
+                <p className="text-base font-bold text-slate-900 truncate">
                   {currentCompany.companyName}
                 </p>
-                <p className="text-[11px] text-slate-500">
+                <p className="text-xs text-slate-500 font-medium">
                   {projects.length} Active Contractor Projects
                 </p>
               </div>
@@ -115,11 +115,11 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
           {/* Quick User Role Switcher (Especially helpful in Demo Mode) */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                <User className="w-3.5 h-3.5 text-slate-500" />
+              <label className="text-xs sm:text-sm font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                <User className="w-4 h-4 text-slate-500" />
                 Switch Team Profile
               </label>
-              <span className="text-[11px] text-slate-400">
+              <span className="text-xs text-slate-400">
                 Role Testing
               </span>
             </div>
@@ -134,29 +134,29 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                       switchDemoUser(user.userId);
                       onClose();
                     }}
-                    className={`w-full p-3 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                    className={`w-full p-3.5 rounded-xl border text-left flex items-center justify-between transition-all cursor-pointer ${
                       isSelected
                         ? 'bg-blue-50/80 border-[#054AC6] shadow-xs'
                         : 'bg-white hover:bg-slate-50 border-slate-200'
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs ${
+                      <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-sm ${
                         isSelected ? 'bg-[#054AC6] text-white' : 'bg-slate-100 text-slate-700'
                       }`}>
                         {user.name.charAt(0)}
                       </div>
                       <div>
-                        <p className={`text-xs font-bold ${isSelected ? 'text-[#03225F]' : 'text-slate-800'}`}>
+                        <p className={`text-sm font-bold ${isSelected ? 'text-[#03225F]' : 'text-slate-800'}`}>
                           {user.name}
                         </p>
-                        <p className="text-[11px] text-slate-500 font-medium">
+                        <p className="text-xs text-slate-500 font-medium">
                           {user.role} • {user.email}
                         </p>
                       </div>
                     </div>
                     {isSelected && (
-                      <CheckCircle2 className="w-4 h-4 text-[#054AC6] shrink-0" />
+                      <CheckCircle2 className="w-5 h-5 text-[#054AC6] shrink-0" />
                     )}
                   </button>
                 );
@@ -172,7 +172,7 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                   resetToDemoData();
                   onClose();
                 }}
-                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+                className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
                 Reset Demo Data (Initial 5 Projects)
@@ -190,7 +190,7 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                 onClose();
                 onOpenSignIn();
               }}
-              className="w-full py-3 px-4 rounded-xl bg-[#054AC6] hover:bg-[#03225F] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
+              className="w-full py-3 px-4 rounded-xl bg-[#054AC6] hover:bg-[#03225F] text-white font-bold text-sm flex items-center justify-center gap-2 shadow-xs transition-colors cursor-pointer"
             >
               <Cloud className="w-4 h-4" />
               Sign In to Cloud Workspace
@@ -202,7 +202,7 @@ export const ProfileDrawer: React.FC<ProfileDrawerProps> = ({
                 logOut();
                 onClose();
               }}
-              className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer"
+              className="w-full py-2.5 px-4 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-sm flex items-center justify-center gap-2 transition-colors cursor-pointer"
             >
               <LogOut className="w-4 h-4" />
               Sign Out of Account

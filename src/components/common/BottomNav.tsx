@@ -90,17 +90,17 @@ export const BottomNav: React.FC<BottomNavProps> = ({
 
                   {/* Badge */}
                   {Boolean(item.badge) && (
-                    <span className="absolute -top-1 -right-1.5 min-w-[16px] h-4 bg-rose-500 text-white text-[10px] font-extrabold rounded-full px-1 flex items-center justify-center shadow-xs animate-pulse">
+                    <span className="absolute -top-1 -right-2 min-w-[18px] h-4.5 bg-rose-500 text-white text-xs font-black rounded-full px-1 flex items-center justify-center shadow-xs animate-pulse">
                       {item.badge}
                     </span>
                   )}
                   {item.id === 'luky' && !isActive && (
-                    <span className="absolute -top-0.5 -right-1 w-2 h-2 rounded-full bg-blue-500" />
+                    <span className="absolute -top-0.5 -right-1 w-2.5 h-2.5 rounded-full bg-blue-500" />
                   )}
                 </div>
 
                 <span
-                  className={`text-[10px] font-bold tracking-tight mt-0.5 whitespace-nowrap ${
+                  className={`text-xs font-extrabold tracking-tight mt-0.5 whitespace-nowrap ${
                     isActive ? 'text-[#054AC6]' : 'text-slate-600'
                   }`}
                 >

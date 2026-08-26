@@ -29,6 +29,13 @@ interface AuthContextType {
   allUsers: User[];
   userRole: UserRole;
   isOwnerOrAdmin: boolean;
+  isProjectManager: boolean;
+  isAccounting: boolean;
+  isFieldUser: boolean;
+  canManageOrganization: boolean;
+  canManageProjects: boolean;
+  canViewFinancialReports: boolean;
+  canCaptureTransactions: boolean;
   isDemoMode: boolean;
   isFirebaseAvailable: boolean;
   firebaseAuthUser: FirebaseUser | null;
@@ -480,6 +487,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const clearAuthError = () => setAuthError(null);
 
   const isOwnerOrAdmin = currentUser.role === 'OWNER' || currentUser.role === 'ADMIN';
+  const isProjectManager = currentUser.role === 'PROJECT_MANAGER';
+  const isAccounting = currentUser.role === 'ACCOUNTING';
+  const isFieldUser = currentUser.role === 'FIELD_USER';
+
+  const canManageOrganization = currentUser.role === 'OWNER' || currentUser.role === 'ADMIN';
+  const canManageProjects = currentUser.role === 'OWNER' || currentUser.role === 'ADMIN' || currentUser.role === 'PROJECT_MANAGER';
+  const canViewFinancialReports = currentUser.role === 'OWNER' || currentUser.role === 'ADMIN' || currentUser.role === 'PROJECT_MANAGER' || currentUser.role === 'ACCOUNTING';
+  const canCaptureTransactions = currentUser.role === 'OWNER' || currentUser.role === 'ADMIN' || currentUser.role === 'PROJECT_MANAGER' || currentUser.role === 'FIELD_USER';
+
   const loading = authState === 'LOADING_AUTH';
 
   return (
@@ -491,6 +507,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         allUsers,
         userRole: currentUser.role,
         isOwnerOrAdmin,
+        isProjectManager,
+        isAccounting,
+        isFieldUser,
+        canManageOrganization,
+        canManageProjects,
+        canViewFinancialReports,
+        canCaptureTransactions,
         isDemoMode: authState === 'DEMO_MODE',
         isFirebaseAvailable,
         firebaseAuthUser,

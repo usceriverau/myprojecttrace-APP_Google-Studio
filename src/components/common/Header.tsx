@@ -39,10 +39,10 @@ export const Header: React.FC<HeaderProps> = () => {
               <BrandLogo size="sm" variant="light" />
               
               <div className="border-l border-white/20 pl-2.5 sm:pl-3 flex flex-col justify-center min-w-0">
-                <span className="text-xs sm:text-sm font-black text-white truncate max-w-[140px] sm:max-w-[240px] lg:max-w-[320px] leading-tight tracking-tight">
+                <span className="text-sm sm:text-base lg:text-lg font-black text-white truncate max-w-[150px] sm:max-w-[260px] lg:max-w-[340px] leading-tight tracking-tight">
                   {currentCompany.companyName}
                 </span>
-                <span className="text-[10px] text-[#7FA0D4] font-medium hidden xs:block truncate">
+                <span className="text-xs sm:text-xs text-[#7FA0D4] font-medium hidden xs:block truncate">
                   Financial Sentinel & Project Trace
                 </span>
               </div>
@@ -57,14 +57,14 @@ export const Header: React.FC<HeaderProps> = () => {
                 title="Tap to switch mode or reset demo"
               >
                 {isDemoMode ? (
-                  <span className="text-[10px] sm:text-xs bg-[#7FA0D4]/20 text-[#7FA0D4] font-bold px-2 py-1 rounded-full border border-[#7FA0D4]/30 flex items-center gap-1 hover:bg-[#7FA0D4]/30 transition-colors">
-                    <Sparkles className="w-3 h-3 text-[#7FA0D4]" />
+                  <span className="text-xs sm:text-sm bg-[#7FA0D4]/20 text-[#7FA0D4] font-bold px-2.5 py-1 rounded-full border border-[#7FA0D4]/30 flex items-center gap-1 hover:bg-[#7FA0D4]/30 transition-colors">
+                    <Sparkles className="w-3.5 h-3.5 text-[#7FA0D4]" />
                     <span className="hidden sm:inline">Demo Mode</span>
                     <span className="sm:hidden">Demo</span>
                   </span>
                 ) : (
-                  <span className="text-[10px] sm:text-xs bg-emerald-500/20 text-emerald-300 font-bold px-2 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1 hover:bg-emerald-500/30 transition-colors">
-                    <Cloud className="w-3 h-3" />
+                  <span className="text-xs sm:text-sm bg-emerald-500/20 text-emerald-300 font-bold px-2.5 py-1 rounded-full border border-emerald-500/30 flex items-center gap-1 hover:bg-emerald-500/30 transition-colors">
+                    <Cloud className="w-3.5 h-3.5" />
                     <span className="hidden sm:inline">Live Workspace</span>
                     <span className="sm:hidden">Live</span>
                   </span>
@@ -75,18 +75,18 @@ export const Header: React.FC<HeaderProps> = () => {
               <button
                 id="header-user-profile-btn"
                 onClick={() => setIsProfileDrawerOpen(true)}
-                className="flex items-center gap-1.5 sm:gap-2 bg-[#021845] hover:bg-blue-950/80 px-2 sm:px-3 py-1.5 rounded-xl border border-[#054AC6]/50 shadow-2xs transition-all cursor-pointer group active:scale-95"
+                className="flex items-center gap-1.5 sm:gap-2 bg-[#021845] hover:bg-blue-950/80 px-2.5 sm:px-3.5 py-1.5 rounded-xl border border-[#054AC6]/50 shadow-2xs transition-all cursor-pointer group active:scale-95"
                 title="Open user profile & role switcher"
               >
-                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-[#054AC6] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-inner group-hover:bg-blue-500 transition-colors">
+                <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg bg-[#054AC6] text-white flex items-center justify-center font-black text-xs sm:text-sm shrink-0 shadow-inner group-hover:bg-blue-500 transition-colors">
                   {currentUser.name.charAt(0)}
                 </div>
 
-                <div className="flex items-center gap-1 text-left">
-                  <span className="text-xs font-bold text-white truncate max-w-[70px] sm:max-w-[120px]">
+                <div className="flex items-center gap-1.5 text-left">
+                  <span className="text-xs sm:text-sm font-bold text-white truncate max-w-[80px] sm:max-w-[130px]">
                     {currentUser.name.split(' ')[0]}
                   </span>
-                  <span className="text-[9px] bg-white/10 text-[#7FA0D4] px-1 py-0.5 rounded font-bold uppercase tracking-wider hidden sm:inline">
+                  <span className="text-[10px] sm:text-xs bg-white/10 text-[#7FA0D4] px-1.5 py-0.5 rounded font-bold uppercase tracking-wider hidden sm:inline">
                     {currentUser.role}
                   </span>
                   <ChevronDown className="w-3.5 h-3.5 text-[#7FA0D4] shrink-0" />
