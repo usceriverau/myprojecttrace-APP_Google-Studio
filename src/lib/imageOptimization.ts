@@ -22,8 +22,8 @@ export interface OptimizedImageResult {
   optimizationDurationMs: number;
 }
 
-const MAX_IMAGE_DIMENSION = 1500; // 1500px max width/height preserving full OCR fidelity
-const JPEG_QUALITY = 0.78; // 78% JPEG quality reduces 5MB payloads to <300KB
+const MAX_IMAGE_DIMENSION = 1400; // 1400px max width/height preserving full OCR fidelity with sub-3s latency
+const JPEG_QUALITY = 0.75; // 0.75 JPEG/WebP compression reduces 6-10MB payloads to <300KB
 
 /**
  * Optimizes a single receipt image file using hardware-accelerated canvas compression.

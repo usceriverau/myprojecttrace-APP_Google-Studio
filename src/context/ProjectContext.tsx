@@ -1032,7 +1032,7 @@ export const ProjectProvider: React.FC<{ children: ReactNode }> = ({ children })
 
     const { analysis, purchaseItems: newItems, warnings, modelUsed } = analysisRes;
 
-    const activeModel = modelUsed || 'gemini-2.5-flash';
+    const activeModel = modelUsed || 'gemini-flash-latest';
     const analyzedPurchaseUpdate: Partial<Purchase> = {
       providerName: analysis.merchant_name || 'Unidentified Merchant',
       purchaseDate: analysis.transaction_date || new Date().toISOString().split('T')[0],

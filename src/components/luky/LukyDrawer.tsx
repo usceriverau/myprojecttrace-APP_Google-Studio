@@ -4,12 +4,14 @@ import { useAuth } from '../../context/AuthContext';
 import { useProjects } from '../../context/ProjectContext';
 import { LukyMessage, LukyExportOption, LukyProposedAction } from '../../types';
 import { askLuky } from '../../services/lukyService';
+import { useSpeechToText } from '../../hooks/useSpeechToText';
 import { LukyActionConfirmationModal } from './LukyActionConfirmationModal';
 import { 
   Bot, Send, Sparkles, X, RotateCcw, Download, 
   FileSpreadsheet, FileText, AlertTriangle, CheckCircle2, 
   Info, DollarSign, TrendingUp, ShieldAlert, ArrowRight,
-  Maximize2, Minimize2, Check
+  Maximize2, Minimize2, Check, Mic, MicOff, Volume2, 
+  Languages, Radio
 } from 'lucide-react';
 
 interface LukyDrawerProps {
@@ -19,6 +21,8 @@ interface LukyDrawerProps {
 }
 
 const STORAGE_KEY_LUKY_MESSAGES = 'mpt_luky_chat_history';
+const STORAGE_KEY_LUKY_VOICE_LANG = 'mpt_luky_speech_lang';
+const STORAGE_KEY_LUKY_AUTO_SUBMIT = 'mpt_luky_auto_submit_voice';
 
 export const LukyDrawer: React.FC<LukyDrawerProps> = ({
   isOpen,
@@ -44,6 +48,25 @@ export const LukyDrawer: React.FC<LukyDrawerProps> = ({
   const [activeProposedAction, setActiveProposedAction] = useState<LukyProposedAction | null>(null);
   const [actionSuccessToast, setActionSuccessToast] = useState<string | null>(null);
   const [exportingReportType, setExportingReportType] = useState<string | null>(null);
+
+  // Voice Settings State
+  const [speechLanguage, setSpeechLanguage] = useState<'en-US' | 'es-US'>(() => {
+    try {
+      return (localStorage.getItem(STORAGE_KEY_LUKY_VOICE_LANG) as 'en-US' | 'es-US') || 'en-US';
+    } catch {
+      return 'en-US';
+    }
+  });
+
+  const [autoSubmitVoice, setAutoSubmitVoice] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_LUKY_AUTO_SUBMIT) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [voiceError, setVoiceError] = useState<string | null>(null);
 
   // Initial greeting message
   const defaultInitialMessage: LukyMessage = {
@@ -83,6 +106,59 @@ I answer questions strictly using your authenticated projects, verified purchase
   const chatEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
+  // Voice-to-Text Recognition Hook
+  const {
+    isSupported: isSpeechSupported,
+    isListening,
+    transcript: speechTranscript,
+    startListening,
+    stopListening,
+    toggleListening,
+    resetTranscript,
+    setLanguage,
+  } = useSpeechToText({
+    defaultLanguage: speechLanguage,
+    onTranscriptChange: (text) => {
+      if (text) {
+        setInputQuery(text);
+      }
+    },
+    onFinalResult: (text) => {
+      if (autoSubmitVoice && text.trim() && !isLoading) {
+        handleSendMessage(text.trim());
+        resetTranscript();
+      }
+    },
+    onError: (err) => {
+      setVoiceError(err);
+    },
+  });
+
+  // Switch voice recognition language between English and Spanish
+  const handleToggleLanguage = (lang: 'en-US' | 'es-US') => {
+    setSpeechLanguage(lang);
+    setLanguage(lang);
+    try {
+      localStorage.setItem(STORAGE_KEY_LUKY_VOICE_LANG, lang);
+    } catch {}
+  };
+
+  // Toggle Auto-Submit preference
+  const handleToggleAutoSubmit = () => {
+    const nextVal = !autoSubmitVoice;
+    setAutoSubmitVoice(nextVal);
+    try {
+      localStorage.setItem(STORAGE_KEY_LUKY_AUTO_SUBMIT, String(nextVal));
+    } catch {}
+  };
+
+  // Ensure microphone terminates cleanly if drawer is closed
+  useEffect(() => {
+    if (!isOpen && isListening) {
+      stopListening();
+    }
+  }, [isOpen, isListening, stopListening]);
+
   // Auto-scroll to bottom of chat
   useEffect(() => {
     if (isOpen) {
@@ -111,7 +187,12 @@ I answer questions strictly using your authenticated projects, verified purchase
     const text = (queryToSend || inputQuery).trim();
     if (!text || isLoading) return;
 
+    if (isListening) {
+      stopListening();
+    }
+
     setInputQuery('');
+    resetTranscript();
 
     const userMessage: LukyMessage = {
       id: `user-${Date.now()}`,
@@ -197,12 +278,14 @@ I answer questions strictly using your authenticated projects, verified purchase
     <>
       {/* Backdrop */}
       <div 
+        id="luky-drawer-backdrop"
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-40 transition-opacity"
         onClick={onClose}
       />
 
       {/* Main Drawer Container */}
       <div 
+        id="luky-drawer-container"
         className={`fixed top-0 right-0 bottom-0 z-50 bg-white shadow-2xl flex flex-col transition-all duration-300 border-l border-slate-200 ${
           isExpanded ? 'w-full md:w-[750px] lg:w-[850px]' : 'w-full md:w-[500px]'
         }`}
@@ -234,6 +317,7 @@ I answer questions strictly using your authenticated projects, verified purchase
 
           <div className="flex items-center gap-1">
             <button
+              id="luky-expand-toggle-button"
               onClick={() => setIsExpanded(!isExpanded)}
               title={isExpanded ? 'Collapse view' : 'Expand view'}
               className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors hidden sm:block"
@@ -242,6 +326,7 @@ I answer questions strictly using your authenticated projects, verified purchase
             </button>
 
             <button
+              id="luky-clear-chat-button"
               onClick={handleClearChat}
               title="Reset conversation"
               className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
@@ -250,6 +335,7 @@ I answer questions strictly using your authenticated projects, verified purchase
             </button>
 
             <button
+              id="luky-close-drawer-button"
               onClick={onClose}
               className="p-2 rounded-lg text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
             >
@@ -466,6 +552,86 @@ I answer questions strictly using your authenticated projects, verified purchase
           <div ref={chatEndRef} />
         </div>
 
+        {/* Real-time Voice Recording Live Banner */}
+        {isListening && (
+          <div 
+            id="luky-voice-listening-banner"
+            className="bg-gradient-to-r from-red-50 via-rose-50 to-blue-50 border-t border-b border-red-200 px-4 py-2.5 flex items-center justify-between gap-3 shadow-inner"
+          >
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="relative flex items-center justify-center shrink-0">
+                <span className="animate-ping absolute inline-flex h-5 w-5 rounded-full bg-red-400 opacity-75" />
+                <div className="w-6 h-6 rounded-full bg-red-600 flex items-center justify-center text-white relative shadow-xs">
+                  <Radio className="w-3.5 h-3.5 animate-pulse" />
+                </div>
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-black text-red-900 tracking-tight flex items-center gap-1.5">
+                    <span>Listening in {speechLanguage === 'en-US' ? 'English (US)' : 'Español (US)'}</span>
+                    <span className="inline-flex items-center gap-0.5">
+                      <span className="w-1 h-3 bg-red-500 rounded-full animate-pulse" />
+                      <span className="w-1 h-4 bg-red-600 rounded-full animate-pulse [animation-delay:0.15s]" />
+                      <span className="w-1 h-2 bg-red-500 rounded-full animate-pulse [animation-delay:0.3s]" />
+                    </span>
+                  </span>
+                  {autoSubmitVoice && (
+                    <span className="text-[10px] bg-red-100 text-red-700 font-bold px-1.5 py-0.5 rounded-sm">
+                      Auto-send active
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-red-700 font-medium truncate mt-0.5">
+                  {speechTranscript ? `"${speechTranscript}"` : 'Speak your financial question clearly...'}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                id="luky-voice-stop-button"
+                onClick={stopListening}
+                className="text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+              >
+                Done
+              </button>
+              {speechTranscript && (
+                <button
+                  type="button"
+                  id="luky-voice-send-now-button"
+                  onClick={() => handleSendMessage(speechTranscript)}
+                  className="text-xs font-bold bg-[#054AC6] hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg shadow-2xs flex items-center gap-1 transition-colors cursor-pointer"
+                >
+                  <Send className="w-3 h-3" />
+                  <span>Send</span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Voice Error Notification Toast */}
+        {voiceError && (
+          <div 
+            id="luky-voice-error-toast"
+            className="bg-amber-50 border-t border-b border-amber-200 px-4 py-2 text-xs font-medium text-amber-900 flex items-center justify-between gap-2"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="truncate">{voiceError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setVoiceError(null)}
+              className="text-amber-800 hover:text-amber-950 font-bold p-1 shrink-0 cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Input Bar */}
         <div className="p-3 sm:p-4 bg-white border-t border-slate-200">
           <form
@@ -475,27 +641,112 @@ I answer questions strictly using your authenticated projects, verified purchase
             }}
             className="flex items-center gap-2"
           >
+            {/* Native Voice-to-Text Microphone Button with Minimum 44px Touch Target */}
+            <button
+              type="button"
+              id="luky-voice-input-button"
+              onClick={toggleListening}
+              title={
+                !isSpeechSupported
+                  ? 'Voice recognition is not supported in this browser'
+                  : isListening
+                  ? 'Listening... Click to stop speech capture'
+                  : `Start voice input (${speechLanguage === 'en-US' ? 'English' : 'Español'})`
+              }
+              disabled={!isSpeechSupported || isLoading}
+              className={`h-11 w-11 min-h-[44px] min-w-[44px] rounded-xl flex items-center justify-center shrink-0 transition-all cursor-pointer ${
+                isListening
+                  ? 'bg-red-500 hover:bg-red-600 text-white animate-pulse ring-4 ring-red-400/40 shadow-sm border border-red-600'
+                  : !isSpeechSupported
+                  ? 'bg-slate-100 text-slate-300 border border-slate-200 cursor-not-allowed'
+                  : 'bg-slate-50 hover:bg-blue-50 text-slate-600 hover:text-[#054AC6] border border-slate-300 active:scale-95 shadow-2xs'
+              }`}
+            >
+              {isListening ? (
+                <Mic className="w-5 h-5 text-white" />
+              ) : (
+                <Mic className="w-5 h-5" />
+              )}
+            </button>
+
             <input
               ref={inputRef}
+              id="luky-query-input-field"
               type="text"
               value={inputQuery}
               onChange={(e) => setInputQuery(e.target.value)}
-              placeholder="Ask Luky about projects, spending, cash, margin, or annual reports..."
+              placeholder={
+                isListening
+                  ? 'Capturing speech in real-time...'
+                  : 'Ask Luky about projects, spending, cash, margin, or annual reports...'
+              }
               disabled={isLoading}
-              className="flex-1 bg-slate-50 border border-slate-300 rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-[#054AC6] focus:border-transparent focus:outline-none transition-all placeholder:text-slate-400"
+              className={`flex-1 bg-slate-50 border rounded-xl px-3.5 py-2.5 text-xs sm:text-sm font-medium focus:ring-2 focus:ring-[#054AC6] focus:border-transparent focus:outline-none transition-all placeholder:text-slate-400 h-11 ${
+                isListening ? 'border-red-300 ring-1 ring-red-200 bg-red-50/20' : 'border-slate-300'
+              }`}
             />
 
             <button
               type="submit"
+              id="luky-send-query-button"
               disabled={!inputQuery.trim() || isLoading}
-              className="bg-[#054AC6] hover:bg-blue-600 text-white p-2.5 sm:px-4 sm:py-2.5 rounded-xl font-bold text-xs sm:text-sm flex items-center gap-1.5 shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+              className="bg-[#054AC6] hover:bg-blue-600 text-white h-11 min-h-[44px] px-3.5 sm:px-4 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shrink-0"
             >
               <Send className="w-4 h-4" />
               <span className="hidden sm:inline">Send</span>
             </button>
           </form>
 
-          <p className="text-[10px] text-slate-400 text-center mt-2">
+          {/* Voice Language & Auto-Send Options Bar */}
+          <div className="flex items-center justify-between gap-2 mt-2 pt-1.5 border-t border-slate-100 px-1 text-[11px] text-slate-500">
+            {/* Language Selector */}
+            <div className="flex items-center gap-1.5">
+              <Languages className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="font-semibold text-slate-600">Voice:</span>
+              <div className="inline-flex rounded-lg p-0.5 bg-slate-100 border border-slate-200">
+                <button
+                  type="button"
+                  id="luky-voice-lang-en"
+                  onClick={() => handleToggleLanguage('en-US')}
+                  className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-colors cursor-pointer ${
+                    speechLanguage === 'en-US'
+                      ? 'bg-[#054AC6] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  EN (US)
+                </button>
+                <button
+                  type="button"
+                  id="luky-voice-lang-es"
+                  onClick={() => handleToggleLanguage('es-US')}
+                  className={`px-2 py-0.5 rounded-md font-bold text-[10px] transition-colors cursor-pointer ${
+                    speechLanguage === 'es-US'
+                      ? 'bg-[#054AC6] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  ES (US)
+                </button>
+              </div>
+            </div>
+
+            {/* Auto-Submit Checkbox Toggle */}
+            <label 
+              id="luky-voice-auto-submit-toggle"
+              className="flex items-center gap-1.5 cursor-pointer select-none text-[10px] sm:text-[11px] font-semibold text-slate-600 hover:text-[#054AC6] transition-colors"
+            >
+              <input
+                type="checkbox"
+                checked={autoSubmitVoice}
+                onChange={handleToggleAutoSubmit}
+                className="w-3.5 h-3.5 text-[#054AC6] rounded-xs border-slate-300 focus:ring-[#054AC6]"
+              />
+              <span>Auto-send on pause</span>
+            </label>
+          </div>
+
+          <p className="text-[10px] text-slate-400 text-center mt-1.5">
             Luky grounds all calculations in company transaction records. Read-only by default.
           </p>
         </div>
@@ -525,3 +776,4 @@ I answer questions strictly using your authenticated projects, verified purchase
     </>
   );
 };
+

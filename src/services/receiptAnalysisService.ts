@@ -153,7 +153,7 @@ export const receiptAnalysisService = {
     const analysisData: AIReceiptAnalysisResult = rawResult.analysis;
     const aiProcessingMs = rawResult.aiProcessingMs || 0;
     const parsingMs = rawResult.parsingMs || 0;
-    const modelUsed = rawResult.modelUsed || 'gemini-2.5-flash';
+    const modelUsed = rawResult.modelUsed || 'gemini-flash-latest';
     const totalMs = Math.round(performance.now() - overallStartTime);
 
     // 4. Lightweight Development Timing Instrumentation
@@ -173,33 +173,44 @@ export const receiptAnalysisService = {
       `optimizedPayloadSize: ${payloadSizeFormatted}`
     );
 
-    // 5. Map extracted items to typed PurchaseItem objects
-    const purchaseItems: PurchaseItem[] = (analysisData.items || []).map((item) => ({
-      itemId: `item_${generateId()}`,
-      companyId,
-      purchaseId,
-      description: item.description || null,
-      sku: item.sku || null,
-      productCode: item.product_code || null,
-      modelNumber: item.model_number || null,
-      brand: item.brand || null,
-      manufacturer: item.manufacturer || null,
-      category: item.category || 'General Materials',
-      colorName: item.color_name || null,
-      colorCode: item.color_code || null,
-      finish: item.finish || null,
-      size: item.size || null,
-      dimensions: item.dimensions || null,
-      quantity: item.quantity !== null && item.quantity !== undefined ? Number(item.quantity) : 1,
-      unit: item.unit || 'EA',
-      unitPrice: item.unit_price !== null && item.unit_price !== undefined ? Number(item.unit_price) : null,
-      lineTotal: item.line_total !== null && item.line_total !== undefined ? Number(item.line_total) : null,
-      rawItemText: item.raw_item_text || item.description || 'Line Item',
-      additionalSpecifications: item.additional_specifications || [],
-      sourcePageNumbers: item.source_page_numbers && item.source_page_numbers.length > 0 ? item.source_page_numbers : [1],
-      confidence: typeof item.confidence === 'number' ? item.confidence : 0.9,
-      createdAt: new Date().toISOString(),
-    }));
+    // 5. Map extracted items to typed PurchaseItem objects with support for both schema variations
+    const purchaseItems: PurchaseItem[] = (analysisData.items || []).map((item: any) => {
+      const desc = item.description || item.raw_item_text || item.rawItemText || 'Line Item';
+      const qty = item.quantity !== null && item.quantity !== undefined ? Number(item.quantity) : 1;
+      const uPrice = item.unitPrice !== null && item.unitPrice !== undefined 
+        ? Number(item.unitPrice) 
+        : (item.unit_price !== null && item.unit_price !== undefined ? Number(item.unit_price) : null);
+      const lTotal = item.lineTotal !== null && item.lineTotal !== undefined 
+        ? Number(item.lineTotal) 
+        : (item.line_total !== null && item.line_total !== undefined ? Number(item.line_total) : (uPrice !== null ? qty * uPrice : null));
+
+      return {
+        itemId: `item_${generateId()}`,
+        companyId,
+        purchaseId,
+        description: desc,
+        sku: item.sku || null,
+        productCode: item.productCode || item.product_code || null,
+        modelNumber: item.modelNumber || item.model_number || null,
+        brand: item.brand || null,
+        manufacturer: item.manufacturer || null,
+        category: item.category || 'General Materials',
+        colorName: item.colorName || item.color_name || null,
+        colorCode: item.colorCode || item.color_code || null,
+        finish: item.finish || null,
+        size: item.size || null,
+        dimensions: item.dimensions || null,
+        quantity: qty,
+        unit: item.unit || 'EA',
+        unitPrice: uPrice,
+        lineTotal: lTotal,
+        rawItemText: item.rawItemText || item.raw_item_text || desc,
+        additionalSpecifications: item.additionalSpecifications || item.additional_specifications || [],
+        sourcePageNumbers: item.sourcePageNumbers || item.source_page_numbers || [1],
+        confidence: typeof item.confidence === 'number' ? item.confidence : 0.95,
+        createdAt: new Date().toISOString(),
+      };
+    });
 
     return {
       success: true,
@@ -407,3 +418,6 @@ export const receiptAnalysisService = {
     };
   },
 };
+
+export const analyzeReceiptWithGemini = receiptAnalysisService.analyzeReceipt.bind(receiptAnalysisService);
+
