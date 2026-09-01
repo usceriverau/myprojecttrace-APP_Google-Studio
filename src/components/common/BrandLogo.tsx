@@ -14,6 +14,9 @@ export const BrandMarkIcon: React.FC<{ sizeClass?: string; className?: string }>
 }) => {
   const [imgSrcIndex, setImgSrcIndex] = useState(0);
   const candidateSources = [
+    'https://raw.githubusercontent.com/usceriverau/myprojecttrace-assets/main/MPT_banner_1_2.png',
+    'https://github.com/usceriverau/myprojecttrace-assets/raw/main/MPT_banner_1_2.png',
+    '/brand/MPT_banner_1_2.png',
     '/brand/MPT_logo_1.png',
     '/brand/myprojecttrace-logo.png',
     'https://raw.githubusercontent.com/usceriverau/myprojecttrace-assets/main/MPT_logo_1.png',
@@ -101,27 +104,40 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   className = '',
   iconOnly = false,
 }) => {
+  const [imgError, setImgError] = useState(false);
+  const [imgSrcIndex, setImgSrcIndex] = useState(0);
+
+  const bannerSources = [
+    'https://raw.githubusercontent.com/usceriverau/myprojecttrace-assets/main/MPT_banner_1_2.png',
+    'https://github.com/usceriverau/myprojecttrace-assets/raw/main/MPT_banner_1_2.png',
+    '/brand/MPT_banner_1_2.png',
+  ];
+
   // Sizing configurations
   const config = {
     sm: {
+      bannerHeight: 'h-7 sm:h-8',
       iconSize: 'w-7 h-7',
       textClass: 'text-base',
       subSize: 'text-[9px]',
       gap: 'gap-2',
     },
     md: {
+      bannerHeight: 'h-8 sm:h-9',
       iconSize: 'w-9 h-9',
       textClass: 'text-xl',
       subSize: 'text-[11px]',
       gap: 'gap-2.5',
     },
     lg: {
+      bannerHeight: 'h-10 sm:h-12',
       iconSize: 'w-12 h-12',
       textClass: 'text-2xl sm:text-3xl',
       subSize: 'text-xs',
       gap: 'gap-3',
     },
     xl: {
+      bannerHeight: 'h-12 sm:h-14',
       iconSize: 'w-16 h-16',
       textClass: 'text-3xl sm:text-4xl',
       subSize: 'text-sm',
@@ -163,8 +179,29 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
     return <BrandMarkIcon sizeClass={config.iconSize} className={className} />;
   }
 
+  // If banner image is available, render the banner directly maintaining symmetry
+  if (!imgError && imgSrcIndex < bannerSources.length) {
+    return (
+      <div className={`flex items-center select-none shrink-0 ${className}`}>
+        <img
+          src={bannerSources[imgSrcIndex]}
+          alt="MyProjectTrace"
+          className={`${config.bannerHeight} w-auto object-contain shrink-0`}
+          onError={() => {
+            if (imgSrcIndex + 1 < bannerSources.length) {
+              setImgSrcIndex(prev => prev + 1);
+            } else {
+              setImgError(true);
+            }
+          }}
+          referrerPolicy="no-referrer"
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className={`flex items-center ${config.gap} select-none ${className}`}>
+    <div className={`flex items-center ${config.gap} select-none shrink-0 ${className}`}>
       <BrandMarkIcon sizeClass={config.iconSize} />
 
       <div className="flex flex-col justify-center">
